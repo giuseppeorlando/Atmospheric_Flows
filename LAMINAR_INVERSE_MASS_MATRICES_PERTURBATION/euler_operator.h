@@ -1767,7 +1767,8 @@ namespace Atmospheric_Flow {
             const auto& pres_prime_s = phi_pres_prime[s - 1].get_value(q);
 
             flux += a[IMEX_stage - 1][s - 1]*dt*
-                    ((rho_bar + rho_prime_s)*(static_cast<Number>(0.5)*Ma2*scalar_product(u_bar + u_prime_s, u_bar + u_prime_s))*(u_bar + u_prime_s))
+                    ((rho_bar + rho_prime_s)*
+                     (static_cast<Number>(0.5)*Ma2*scalar_product(u_bar + u_prime_s, u_bar + u_prime_s))*(u_bar + u_prime_s))
                   + a_tilde[IMEX_stage - 1][s - 1]*dt*
                     (inv_Gamma*((pres_bar + pres_prime_s)*(u_bar + u_prime_s)));
 

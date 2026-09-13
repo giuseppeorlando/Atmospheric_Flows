@@ -58,6 +58,10 @@ namespace RunTimeParameters {
      */
     void print_parameters() const;
 
+    /*--- Start with the test case configuration ---*/
+    std::string tc_name;       /*!< Identifier of the test case */
+    std::string tc_param_file; /*!< Name of the parameters file for the specific test case */
+
     /*--- Start with physical parameters ---*/
     double initial_time; /*!< Variable to set the initial time (default equal to 0) */
     double final_time;   /*!< Variable to set the final time */
@@ -84,18 +88,6 @@ namespace RunTimeParameters {
     double T_ref;   /*!< Reference temperature */
     double rho_ref; /*!< Reference density */
 
-    double h;  /*!< Mountain height */
-    double xc; /*!< x-center of the mountain */
-    double yc; /*!< y-center of the mountain */
-    double ac; /*!< Semi-Width of the mountain */
-
-    double N; /*!< Buoyancy frequency */
-
-    double u_bar;   /*!< Reference background velocity */
-    double p_bar;   /*!< Reference background pressure */
-    double T_bar;   /*!< Reference background temperature */
-    double rho_bar; /*!< Reference background density */
-
     /*--- Numerical parameters ---*/
     unsigned degree_u;   /*!< Polynomial degree for the velocity (not used so far) */
     unsigned degree_rho; /*!< Polynomial degree for the density (not used so far) */
@@ -103,21 +95,6 @@ namespace RunTimeParameters {
 
     double dt;       /*!< The time step */
     std::string CFL; /*!< The Courant number (declared as string so as to verify if empty or not) */
-
-    double z_start;  /*!< Start of Rayleigh damping for top boundary */
-    double lambda_z; /*!< Intensity of Rayleigh damping for top boundary */
-
-    double x_start_left;  /*!< Start of Rayleigh damping for left boundary */
-    double lambda_x_left; /*!< Intensity of Rayleigh damping for left boundary */
-
-    double x_start_right;  /*!< Start of Rayleigh damping for right boundary */
-    double lambda_x_right; /*!< Intensity of Rayleigh damping for right boundary */
-
-    double y_start_left;  /*!< Start of Rayleigh damping for y left boundary */
-    double lambda_y_left; /*!< Intensity of Rayleigh damping for y left boundary */
-
-    double y_start_right;  /*!< Start of Rayleigh damping for y right boundary */
-    double lambda_y_right; /*!< Intensity of Rayleigh damping for y right boundary */
 
     double atol_fixed_point; /*!< Absolute tolerance for the fixed point loop */
     double rtol_fixed_point; /*!< Relative tolerance for the fixed point loop */
@@ -160,80 +137,32 @@ namespace RunTimeParameters {
     ParameterHandler prm; /*!< Auxiliary variable (deal.II structure) which handles the parameters */
   };
 
-  // In the constructor of this class we declare all the parameters.
-  // We employ the 'enter_subsection' to divide into categories and
-  // the 'declare_entry' to declare a certain parameter to be setted.
+  // In the constructor of this class we declare all the parameters
   //
-  Data_Storage::Data_Storage(): initial_time(0.0),
-                                final_time(1.0),
-                                x_min(0.0),
-                                x_max(1.0),
-                                y_min(0.0),
-                                y_max(1.0),
-                                z_min(0.0),
-                                z_max(1.0),
-                                Mach(1.0),
-                                Froude(0.319275428407050),
-                                L_ref(1.0),
-                                u_ref(1.0),
-                                p_ref(1.0),
-                                T_ref(1.0),
-                                rho_ref(1.0),
-                                h(1.0),
-                                xc(1.0),
-                                yc(1.0),
-                                ac(1.0),
-                                N(0.01),
-                                u_bar(1.0),
-                                p_bar(1.0),
-                                T_bar(1.0),
-                                rho_bar(1.0),
-                                degree_u(1),
-                                degree_rho(1),
-                                degree_p(1),
-                                dt(5e-4),
-                                CFL(""),
-                                z_start(1.0),
-                                lambda_z(1.0),
-                                x_start_left(0.0),
-                                lambda_x_left(1.0),
-                                x_start_right(1.0),
-                                lambda_x_right(1.0),
-                                y_start_left(0.0),
-                                lambda_y_left(1.0),
-                                y_start_right(1.0),
-                                lambda_y_right(1.0),
-                                atol_fixed_point(1e-12),
-                                rtol_fixed_point(1e-10),
-                                l_mixing(1.0),
-                                n_elements_x(1),
-                                n_elements_y(1),
-                                n_elements_z(1),
-                                n_global_refines(0),
-                                degree_mapping(1),
-                                max_loc_refinements(0),
-                                min_loc_refinements(0),
-                                refinement_iterations(0),
-                                max_iterations(1000),
-                                atol_iterative(1e-14),
-                                rtol_iterative(1e-12),
-                                verbose(true),
-                                output_interval(15),
-                                n_files(""),
-                                dt_save(""),
-                                dir(""),
-                                restart(false),
-                                save_for_restart(false),
-                                step_restart(0),
-                                time_restart(0.0),
-                                as_initial_conditions(false)
-  {
+  Data_Storage::Data_Storage() {
     declare_parameters();
   }
 
-  // Function to delcare all parameters desired
+  // Function to delcare all parameters desired.
+  // We employ the 'enter_subsection' to divide into categories and
+  // the 'declare_entry' to declare a certain parameter to be setted
   //
   void Data_Storage::declare_parameters() {
+    /*--- Start declaring entries for the test case ---*/
+    prm.enter_subsection("Test case");
+    {
+      prm.declare_entry("test_case",
+                        "3D non-hydrostatic mountain",
+                        Patterns::Selection("3D non-hydrostatic mountain"),
+                        "Name of the configuration of interest.");
+      prm.declare_entry("test_case_parameters",
+                        "ic_3D_nonhydrostatic.prm",
+                        Patterns::FileName(),
+                        "Name of the file of the parameters "
+                        "for the configuration of interest.");
+    }
+    prm.leave_subsection();
+
     /*--- Start declaring entries for the physical parameters ---*/
     prm.enter_subsection("Physical data");
     {
@@ -300,45 +229,6 @@ namespace RunTimeParameters {
                         "1.0",
                         Patterns::Double(0.0),
                         "The reference density.");
-
-      prm.declare_entry("h",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "The hill height.");
-      prm.declare_entry("xc",
-                        "1.0",
-                        Patterns::Double(),
-                        "The x-center of the hill.");
-      prm.declare_entry("yc",
-                        "1.0",
-                        Patterns::Double(),
-                        "The y-center of the hill.");
-      prm.declare_entry("ac",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "The semi-width of the hill.");
-
-      prm.declare_entry("N",
-                        "0.01",
-                        Patterns::Double(0.0),
-                        "The buoyancy frequency.");
-
-      prm.declare_entry("u_bar",
-                        "1.0",
-                        Patterns::Double(),
-                        "The (horizontal) background.");
-      prm.declare_entry("p_bar",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "The background pressure (at z = 0).");
-      prm.declare_entry("T_bar",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "The background temperature (at z = 0).");
-      prm.declare_entry("rho_bar",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "The background density (at z = 0).");
     }
     prm.leave_subsection();
 
@@ -366,47 +256,6 @@ namespace RunTimeParameters {
                         "",
                         Patterns::Anything(),
                         "The CFL value (declared as string in case unused).");
-
-      prm.declare_entry("z_start",
-                        "1.0",
-                        Patterns::Double(),
-                        "Start of Rayleigh damping for top boundary.");
-      prm.declare_entry("lambda_z",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "Intensity of Rayleigh damping for top boundary.");
-      prm.declare_entry("x_start_left",
-                        "0.0",
-                        Patterns::Double(),
-                        "Start of Rayleigh damping for left boundary.");
-      prm.declare_entry("lambda_x_left",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "Intensity of Rayleigh damping for left boundary.");
-      prm.declare_entry("x_start_right",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "Start of Rayleigh damping for right boundary.");
-      prm.declare_entry("lambda_x_right",
-                        "1.0",
-                        Patterns::Double(),
-                        "Intensity of Rayleigh damping for right boundary.");
-      prm.declare_entry("y_start_left",
-                        "0.0",
-                        Patterns::Double(0.0),
-                        "Start of Rayleigh damping for y left boundary.");
-      prm.declare_entry("lambda_y_left",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "Intensity of Rayleigh damping for y left boundary.");
-      prm.declare_entry("y_start_right",
-                        "1.0",
-                        Patterns::Double(0.0),
-                        "Start of Rayleigh damping for y right boundary.");
-      prm.declare_entry("lambda_y_right",
-                        "1.0",
-                        Patterns::Double(),
-                        "Intensity of Rayleigh damping for y right boundary.");
 
       prm.declare_entry("atol_fixed_point",
                         "1e-12",
@@ -565,6 +414,14 @@ namespace RunTimeParameters {
                 << std::endl;
     }
 
+    /*--- Start with entries related to the test case ---*/
+    prm.enter_subsection("Test case");
+    {
+      tc_name       = prm.get("test_case");
+      tc_param_file = prm.get("test_case_parameters");
+    }
+    prm.leave_subsection();
+
     /*--- Start with physical related parameters ---*/
     prm.enter_subsection("Physical data");
     {
@@ -586,18 +443,6 @@ namespace RunTimeParameters {
       p_ref   = prm.get_double("p_ref");
       T_ref   = prm.get_double("T_ref");
       rho_ref = prm.get_double("rho_ref");
-
-      h  = prm.get_double("h");
-      xc = prm.get_double("xc");
-      yc = prm.get_double("yc");
-      ac = prm.get_double("ac");
-
-      N = prm.get_double("N");
-
-      u_bar   = prm.get_double("u_bar");
-      p_bar   = prm.get_double("p_bar");
-      T_bar   = prm.get_double("T_bar");
-      rho_bar = prm.get_double("rho_bar");
     }
     prm.leave_subsection();
 
@@ -610,17 +455,6 @@ namespace RunTimeParameters {
 
       dt  = prm.get_double("dt");
       CFL = prm.get("CFL");
-
-      z_start        = prm.get_double("z_start");
-      lambda_z       = prm.get_double("lambda_z");
-      x_start_left   = prm.get_double("x_start_left");
-      lambda_x_left  = prm.get_double("lambda_x_left");
-      x_start_right  = prm.get_double("x_start_right");
-      lambda_x_right = prm.get_double("lambda_x_right");
-      y_start_left   = prm.get_double("y_start_left");
-      lambda_y_left  = prm.get_double("lambda_y_left");
-      y_start_right  = prm.get_double("y_start_right");
-      lambda_y_right = prm.get_double("lambda_y_right");
 
       atol_fixed_point = prm.get_double("atol_fixed_point");
       rtol_fixed_point = prm.get_double("rtol_fixed_point");
