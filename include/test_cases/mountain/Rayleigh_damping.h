@@ -16,12 +16,9 @@
 
 // @sect{Include files}
 
-// We start by including the necessary deal.II header file and a related
-// header file with some constant values
+// We start by including the necessary deal.II header file
 //
 #include <deal.II/base/function.h>
-
-#include "../equation_data.h"
 
 // @sect{Rayleigh damping}
 

@@ -21,7 +21,10 @@
 //
 #include <deal.II/base/function.h>
 
-#include "../equation_data.h"
+#include "mountain_parameters.h"
+#include "../test_case.h"
+
+#include "../../equation_data.h"
 
 #include <cmath>
 
@@ -42,13 +45,11 @@ namespace ICBC {
   public:
     /**
      * Class constructor
-     * @param u_bar_ background velocity
-     * @param u_ref_ reference velocity
-     * @param initial_time_ initial time (unused)
+     * @param parameters_ auxiliary structure with parameters specific of the test case
+     * @param data_ auxiliary structure with 'generic' parameters
      */
-    Velocity(const T u_bar_,
-             const T u_ref_,
-             const T initial_time = static_cast<T>(0.0));
+    Velocity(RunTimeParameters::MountainParameters& parameters_,
+             RunTimeParameters::Data_Storage& data_);
 
     /**
      * Evaluation of the velocity for each component
@@ -67,18 +68,16 @@ namespace ICBC {
                               Vector<T>&           values) const override;
 
   private:
-    T u_bar; /*!< Background velocity */
-    T u_ref; /*!< Reference velocity (for non-dimensional variables) */
+    RunTimeParameters::MountainParameters& parameters; /*!< Parameters specific of the test case */
+    RunTimeParameters::Data_Storage& data;             /*!< 'Global' parameters */
   };
 
   // Constructor which relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Velocity<dim, T>::Velocity(const T u_bar_,
-                             const T u_ref_,
-                             const T initial_time):
-    Function<dim, T>(dim, initial_time),
-    u_bar(u_bar_), u_ref(u_ref_) {}
+  Velocity<dim, T>::Velocity(RunTimeParameters::MountainParameters& parameters_,
+                             RunTimeParameters::Data_Storage& data_):
+    Function<dim, T>(dim, data_.initial_time), parameters(parameters_), data(data_) {}
 
   // Specify the value for each spatial component. This function is overriden.
   //
@@ -88,7 +87,7 @@ namespace ICBC {
     AssertIndexRange(component, dim);
 
     if(component == 0) {
-      return u_bar/u_ref;
+      return parameters.u_bar/data.u_ref;
     }
     else {
       return static_cast<T>(0.0);
@@ -116,19 +115,11 @@ namespace ICBC {
   public:
     /**
      * Class constructor
-     * @param p_bar_ background pressure
-     * @param T_bar_ background temperature
-     * @param p_ref_ reference pressure
-     * @param p_ref_ reference length
-     * @param N_ buoyancy frequency
-     * @param initial_time_ initial time (unused)
+     * @param parameters_ auxiliary structure with parameters specific of the test case
+     * @param data_ auxiliary structure with 'generic' parameters
      */
-    Pressure(const T p_bar_,
-             const T T_bar_,
-             const T p_ref_,
-             const T L_ref_,
-             const T N_,
-             const T initial_time = static_cast<T>(0.0));
+    Pressure(RunTimeParameters::MountainParameters& parameters_,
+             RunTimeParameters::Data_Storage& data_);
 
     /**
      * Evaluation of the pressure
@@ -139,26 +130,16 @@ namespace ICBC {
                     const unsigned       component = 0) const override;
 
   private:
-    T p_bar; /*!< Background pressure */
-    T T_bar; /*!< Background temeprature */
-
-    T p_ref; /*!< Reference pressure (for non-dimensional variables) */
-    T L_ref; /*!< Reference length (for non-dimensional variables) */
-
-    T N; /*!< Buoyancy frequency */
+    RunTimeParameters::MountainParameters& parameters; /*!< Parameters specific of the test case */
+    RunTimeParameters::Data_Storage& data;             /*!< 'Global' parameters */
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Pressure<dim, T>::Pressure(const T p_bar_,
-                             const T T_bar_,
-                             const T p_ref_,
-                             const T L_ref_,
-                             const T N_,
-                             const T initial_time):
-    Function<dim, T>(1, initial_time),
-    p_bar(p_bar_), T_bar(T_bar_), p_ref(p_ref_), L_ref(L_ref_), N(N_) {}
+  Pressure<dim, T>::Pressure(RunTimeParameters::MountainParameters& parameters_,
+                             RunTimeParameters::Data_Storage& data_):
+    Function<dim, T>(1, data_.initial_time), parameters(parameters_), data(data_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -173,11 +154,11 @@ namespace ICBC {
                         static_cast<T>(EquationData::Cp_Cv);
 
     const auto pi_bar = static_cast<T>(1.0)
-                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(N*N)*
-                        Gamma/(static_cast<T>(EquationData::R)*T_bar)*
-                        (static_cast<T>(1.0) - std::exp(-N*N/static_cast<T>(EquationData::g)*p[2]*L_ref));
+                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(parameters.N*parameters.N)*
+                        Gamma/(static_cast<T>(EquationData::R)*parameters.T_bar)*
+                        (static_cast<T>(1.0) - std::exp(-parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref));
 
-    return (p_bar/p_ref)*std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
+    return (parameters.p_bar/data.p_ref)*std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
   }
 
 
@@ -189,19 +170,11 @@ namespace ICBC {
   public:
     /**
      * Class constructor
-     * @param p_bar_ background pressure
-     * @param T_bar_ background temperature
-     * @param rho_ref_ reference density
-     * @param p_ref_ reference length
-     * @param N_ buoyancy frequency
-     * @param initial_time_ initial time (unused)
+     * @param parameters_ auxiliary structure with parameters specific of the test case
+     * @param data_ auxiliary structure with 'generic' parameters
      */
-    Density(const T p_bar_,
-            const T T_bar_,
-            const T rho_ref_,
-            const T L_ref_,
-            const T N_,
-            const T initial_time = static_cast<T>(0.0));
+    Density(RunTimeParameters::MountainParameters& parameters_,
+            RunTimeParameters::Data_Storage& data_);
 
     /**
      * Evaluation of the density
@@ -211,26 +184,16 @@ namespace ICBC {
     virtual T value(const Point<dim, T>& p,
                     const unsigned       component = 0) const override;
   private:
-    T p_bar; /*!< Background pressure */
-    T T_bar; /*!< Background temeprature */
-
-    T rho_ref; /*!< Reference density (for non-dimensional variables) */
-    T L_ref;   /*!< Reference length (for non-dimensional variables) */
-
-    T N; /*!< Buoyancy frequency */
+    RunTimeParameters::MountainParameters& parameters; /*!< Parameters specific of the test case */
+    RunTimeParameters::Data_Storage& data;             /*!< 'Global' parameters */
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Density<dim, T>::Density(const T p_bar_,
-                           const T T_bar_,
-                           const T rho_ref_,
-                           const T L_ref_,
-                           const T N_,
-                           const T initial_time):
-    Function<dim, T>(1, initial_time),
-    p_bar(p_bar_), T_bar(T_bar_), rho_ref(rho_ref_), L_ref(L_ref_), N(N_) {}
+  Density<dim, T>::Density(RunTimeParameters::MountainParameters& parameters_,
+                           RunTimeParameters::Data_Storage& data_):
+    Function<dim, T>(1, data_.initial_time), parameters(parameters_), data(data_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -245,17 +208,30 @@ namespace ICBC {
                         static_cast<T>(EquationData::Cp_Cv);
 
     const auto pi_bar = static_cast<T>(1.0)
-                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(N*N)*
-                        Gamma/(static_cast<T>(EquationData::R)*T_bar)*
-                        (static_cast<T>(1.0) - std::exp(-N*N/static_cast<T>(EquationData::g)*p[2]*L_ref));
+                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(parameters.N*parameters.N)*
+                        Gamma/(static_cast<T>(EquationData::R)*parameters.T_bar)*
+                        (static_cast<T>(1.0) - std::exp(-parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref));
 
-    const auto theta_bar = T_bar*std::exp(N*N/static_cast<T>(EquationData::g)*p[2]*L_ref);
+    const auto theta_bar = parameters.T_bar*std::exp(parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref);
 
-    const auto rho_bar = p_bar/(static_cast<T>(EquationData::R)*T_bar);
+    const auto rho_bar = parameters.p_bar/(static_cast<T>(EquationData::R)*parameters.T_bar);
 
-    return (rho_bar/rho_ref)*
-           T_bar/theta_bar*std::pow(pi_bar, static_cast<T>(1.0)/
-                                            (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
+    return (rho_bar/data.rho_ref)*
+           parameters.T_bar/theta_bar*std::pow(pi_bar, static_cast<T>(1.0)/
+                                               (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
   }
 
 } // namespace ICBC
+
+/**
+ * @brief 3D non-hydrostatic test case
+ *
+ * This type owns all 3D non-hydrostatic-specific configuration and hides the concrete
+ * implementations from the solver.
+ */
+template<unsigned dim, typename T = double>
+using NonHydrostatic3DTestCase = TestCase<dim, T,
+                                          RunTimeParameters::MountainParameters,
+                                          ICBC::Density<dim, T>,
+                                          ICBC::Velocity<dim, T>,
+                                          ICBC::Pressure<dim, T>>;

@@ -1,3 +1,9 @@
+subsection Test case
+  # In this subsection we specify the test case
+  set test_case = 3D non-hydrostatic mountain
+  set test_case_parameters = include/test_cases/mountain/ic_3D_nonhydrostatic.prm
+end
+
 subsection Physical data
   # In this subsection we declare the physical data
   set initial_time = 0.0
@@ -17,35 +23,12 @@ subsection Physical data
   set u_ref   = 10.0              # Reference velocity for non-dimensional variables 
   set p_ref   = 100000.0          # Reference pressure for non-dimensional variables
   set rho_ref = 1.188579415825103 # Reference density for non-dimensional variables
-
-  set h  = 400.0   # Hill height
-  set xc = 30000.0 # x-center of the hill
-  set yc = 20000.0 # y-center of the hill
-  set ac = 1000.0  # semi-width of the hill
-
-  set N = 0.01 # Buoyancy frequency
-
-  set u_bar = 10.0     # Background horizontal velocity 
-  set p_bar = 100000.0 # Background pressure (z = 0)
-  set T_bar = 293.15   # Background temperature (z = 0)
 end
 
 subsection Numerical data
   # In this subsection we declare some numerical data
-  # (time step, bcs (Rayliegh damping), and fixed point iteration tolerance)
+  # (time step and fixed point iteration tolerance)
   set dt = 0.04
-
-  # Rayleigh damping parameters
-  set z_start        = 10000.0
-  set lambda_z       = 1.2
-  set x_start_left   = 20000.0
-  set lambda_x_left  = 1.2
-  set x_start_right  = 40000.0
-  set lambda_x_right = 1.2
-  set y_start_left   = 10000.0
-  set lambda_y_left  = 1.2
-  set y_start_right  = 30000.0
-  set lambda_y_right = 1.2
 
   # Fixed point tolerances
   set atol_fixed_point = 0.0

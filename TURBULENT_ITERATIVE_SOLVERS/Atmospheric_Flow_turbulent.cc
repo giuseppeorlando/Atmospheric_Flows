@@ -30,6 +30,7 @@ namespace fs = std::filesystem;
 #include <deal.II/lac/affine_constraints.h>
 
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/grid_refinement.h>
 #include <deal.II/grid/manifold_lib.h>
 
@@ -58,7 +59,7 @@ namespace fs = std::filesystem;
 #include <deal.II/multigrid/mg_matrix.h>
 
 // Include headers related to the problem of interest
-#include "include/ic_bc/ic_3D_nonhydrostatic_hill.h"
+#include "include/test_cases/test_case_factory.h"
 
 #include "include/ic_bc/Rayleigh_damping.h"
 #include "include/mapping/mapping.h"
@@ -86,7 +87,7 @@ public:
    * @param explicit_RK explicit Runge-Kutta Butcher tableau
    * @param implicit_RK implicit Runge-Kutta Butcher tableau
    */
-  EulerSolver(const RunTimeParameters::Data_Storage& data,
+  EulerSolver(RunTimeParameters::Data_Storage& data,
               const TimeStepping::RungeKutta<Number>& explicit_RK,
               const TimeStepping::RungeKutta<Number>& implicit_RK);
 
@@ -221,15 +222,13 @@ protected:
 
   std::vector<QGauss<1>> quadratures; /*!< Auxiliary container for the quadrature in matrix-free */
 
+  // Auxiliary variable to set the test case
+  std::unique_ptr<TestCaseBase<dim, Number>> tc;
+
   // Manifold (mapping) data structures
   GalChenMapping::PushForward<dim, Number> push_forward;
   GalChenMapping::PullBack<dim, Number>    pull_back;
   FunctionManifold<dim, dim, dim>          manifold;
-
-  // Functions to set the initial conditions
-  ICBC::Density<dim, Number>  rho_init;
-  ICBC::Velocity<dim, Number> u_init;
-  ICBC::Pressure<dim, Number> pres_init;
 
   // Functions for the Rayleigh damping profile
   RayleighDamping::Rayleigh<dim, 1, Number>       dt_tau;
@@ -386,7 +385,7 @@ private:
 // load the initial data.
 //
 template<unsigned dim>
-EulerSolver<dim>::EulerSolver(const RunTimeParameters::Data_Storage& data,
+EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
                               const TimeStepping::RungeKutta<Number>& explicit_RK,
                               const TimeStepping::RungeKutta<Number>& implicit_RK):
   /*--- Time integration ---*/
@@ -421,36 +420,31 @@ EulerSolver<dim>::EulerSolver(const RunTimeParameters::Data_Storage& data,
   dof_handlers(EquationData::n_vars),
   constraints(EquationData::n_vars),
   /*--- Domain ---*/
-  push_forward(data.z_max, data.h, data.xc, data.yc, data.ac, data.L_ref),
-  pull_back(data.z_max, data.h, data.xc, data.yc, data.ac, data.L_ref),
+  tc(make_test_case<dim, Number>(data.tc_name, data.tc_param_file, data)),
+  push_forward(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
+  pull_back(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
   manifold(push_forward, pull_back),
-  /*--- Initial condition ---*/
-  rho_init(data.p_bar, data.T_bar, data.rho_ref, data.L_ref,
-           data.N, data.initial_time),
-  u_init(data.u_bar, data.u_ref, data.initial_time),
-  pres_init(data.p_bar, data.T_bar, data.p_ref, data.L_ref,
-            data.N, data.initial_time),
   /*--- Boundary condition (Rayleigh damping) ---*/
-  dt_tau(data.z_start, data.z_max, data.lambda_z, data.L_ref),
-  dt_tau_aux(data.z_start, data.z_max, data.lambda_z, data.L_ref),
-  dt_tau_vel(data.z_start, data.z_max, data.lambda_z, data.L_ref),
-  dt_tau_vel_aux(data.z_start, data.z_max, data.lambda_z, data.L_ref),
-  dt_tau_right(data.x_start_right, data.x_max, data.lambda_x_right, data.L_ref),
-  dt_tau_aux_right(data.x_start_right, data.x_max, data.lambda_x_right, data.L_ref),
-  dt_tau_vel_right(data.x_start_right, data.x_max, data.lambda_x_right, data.L_ref),
-  dt_tau_vel_aux_right(data.x_start_right, data.x_max, data.lambda_x_right, data.L_ref),
-  dt_tau_left(data.x_start_left, data.x_min, data.lambda_x_left, data.L_ref),
-  dt_tau_aux_left(data.x_start_left, data.x_min, data.lambda_x_left, data.L_ref),
-  dt_tau_vel_left(data.x_start_left, data.x_min, data.lambda_x_left, data.L_ref),
-  dt_tau_vel_aux_left(data.x_start_left, data.x_min, data.lambda_x_left, data.L_ref),
-  dt_tau_right_y(data.y_start_right, data.y_max, data.lambda_y_right, data.L_ref),
-  dt_tau_aux_right_y(data.y_start_right, data.y_max, data.lambda_y_right, data.L_ref),
-  dt_tau_vel_right_y(data.y_start_right, data.y_max, data.lambda_y_right, data.L_ref),
-  dt_tau_vel_aux_right_y(data.y_start_right, data.y_max, data.lambda_y_right, data.L_ref),
-  dt_tau_left_y(data.y_start_left, data.y_min, data.lambda_y_left, data.L_ref),
-  dt_tau_aux_left_y(data.y_start_left, data.y_min, data.lambda_y_left, data.L_ref),
-  dt_tau_vel_left_y(data.y_start_left, data.y_min, data.lambda_y_left, data.L_ref),
-  dt_tau_vel_aux_left_y(data.y_start_left, data.y_min, data.lambda_y_left, data.L_ref),
+  dt_tau(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
+  dt_tau_aux(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
+  dt_tau_vel(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
+  dt_tau_vel_aux(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
+  dt_tau_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
+  dt_tau_aux_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
+  dt_tau_vel_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
+  dt_tau_vel_aux_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
+  dt_tau_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
+  dt_tau_aux_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
+  dt_tau_vel_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
+  dt_tau_vel_aux_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
+  dt_tau_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
+  dt_tau_aux_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
+  dt_tau_vel_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
+  dt_tau_vel_aux_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
+  dt_tau_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
+  dt_tau_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
+  dt_tau_vel_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
+  dt_tau_vel_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
   /*--- Output ---*/
   saving_dir(data.dir),
   pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0),
@@ -470,6 +464,9 @@ EulerSolver<dim>::EulerSolver(const RunTimeParameters::Data_Storage& data,
   gamma(EquationData::Cp_Cv),
   Gamma((gamma - static_cast<Number>(1.0))/gamma)
   {
+    // Check the created test case
+    pcout << "Selected test case: " << data.tc_name << std::endl;
+
     // Check time step coherence
     if(data.CFL.empty()) {
       dt = static_cast<Number>(data.dt);
@@ -745,9 +742,9 @@ void EulerSolver<dim>::setup_dofs() {
   matrix_free_storage->initialize_dof_vector(u_bar, EquationData::U_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(pres_bar, EquationData::P_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(rho_bar, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(mapping, dof_handler_velocity, u_init, u_bar);
-  VectorTools::interpolate(mapping, dof_handler_pressure, pres_init, pres_bar);
-  VectorTools::interpolate(mapping, dof_handler_density, rho_init, rho_bar);
+  VectorTools::interpolate(mapping, dof_handler_velocity, *(tc->ic.velocity), u_bar);
+  VectorTools::interpolate(mapping, dof_handler_pressure, *(tc->ic.pressure), pres_bar);
+  VectorTools::interpolate(mapping, dof_handler_density, *(tc->ic.density), rho_bar);
 
   dt_tau_u.scale(u_bar);
   dt_tau_pres.scale(pres_bar);
@@ -824,9 +821,9 @@ void EulerSolver<dim>::initialize() {
   }
   // Initialize the fields
   else {
-    VectorTools::interpolate(mapping, dof_handler_density, rho_init, rho_s.front());
-    VectorTools::interpolate(mapping, dof_handler_velocity, u_init, u_s.front());
-    VectorTools::interpolate(mapping, dof_handler_pressure, pres_init, pres_s.front());
+    VectorTools::interpolate(mapping, dof_handler_density, *(tc->ic.density), rho_s.front());
+    VectorTools::interpolate(mapping, dof_handler_velocity, *(tc->ic.velocity), u_s.front());
+    VectorTools::interpolate(mapping, dof_handler_pressure, *(tc->ic.pressure), pres_s.front());
   }
 
   // Initilize also the potential temperature so as to obtain a proper saving of initial state
@@ -1760,6 +1757,7 @@ void print_help(const char* program_name) {
             << "Options:\n"
             << "  -p, --param FILE     Parameter file to read\n"
             << "  -h, --help           Show this help message\n\n"
+            << "  --help_test_case     Show the help message of the test case in the parameter file\n\n"
             << "Default parameter file: parameter-file.prm\n";
 }
 
@@ -1767,11 +1765,13 @@ int main(int argc, char *argv[]) {
   try {
     // Read the parameters
     std::string parameter_file = "parameter-file.prm";
+    RunTimeParameters::Data_Storage data;
     for(int i = 1; i < argc; ++i) {
       std::string arg = argv[i];
 
       if(arg == "-h" || arg == "--help") {
         print_help(argv[0]);
+        data.print_parameters();
         return 0;
       }
       else if(arg == "-p" || arg == "--param") {
@@ -1788,8 +1788,17 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    RunTimeParameters::Data_Storage data;
     data.parse_parameters(parameter_file);
+
+    for(int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+
+      if(arg == "--help_test_case") {
+        std::cout << "Test case: " << data.tc_name << std::endl;
+        print_help_test_case(data.tc_name);
+        return 0;
+      }
+    }
 
     // Initialize console and output
     Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, -1);
