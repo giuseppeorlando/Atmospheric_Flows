@@ -766,6 +766,7 @@ namespace Atmospheric_Flow {
 
             flux += a[IMEX_stage - 1][s - 1]*dt*
                     ((rho_bar + rho_prime_s)*(u_bar + u_prime_s));
+            flux -= a[IMEX_stage - 1][s - 1]*dt*(rho_bar*u_bar); // Well-balancing term for non-zero u_bar
           }
 
           phi.submit_value(rho_prime_old, q);
@@ -822,6 +823,7 @@ namespace Atmospheric_Flow {
 
             flux += b[s - 1]*dt*
                     ((rho_bar + rho_prime_s)*(u_bar + u_prime_s));
+            flux -= b[s - 1]*dt*(rho_bar*u_bar); // Well-balancing term for non-zero u_bar
           }
 
           phi.submit_value(rho_prime_old, q);
@@ -914,6 +916,12 @@ namespace Atmospheric_Flow {
                                                            rho_bar_p + rho_prime_s_p,
                                                            u_bar_p + u_prime_s_p,
                                                            n_minus);
+            flux_num -= a[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_continuity(rho_bar_m,
+                                                           u_bar_m,
+                                                           rho_bar_p,
+                                                           u_bar_p,
+                                                           n_minus); // Well-balancing term for non-zero u_bar
           }
 
           phi_m.submit_value(-flux_num, q);
@@ -989,6 +997,12 @@ namespace Atmospheric_Flow {
                                                            rho_bar_p + rho_prime_s_p,
                                                            u_bar_p + u_prime_s_p,
                                                            n_minus);
+            flux_num -= b[s - 1]*dt*
+                        num_flux.numerical_flux_continuity(rho_bar_m,
+                                                           u_bar_m,
+                                                           rho_bar_p,
+                                                           u_bar_p,
+                                                           n_minus); // Well-balancing term for non-zero u_bar
           }
 
           phi_m.submit_value(-flux_num, q);
@@ -1127,6 +1141,7 @@ namespace Atmospheric_Flow {
 
             flux += a[IMEX_stage - 1][s - 1]*dt*((rho_bar + rho_prime_s)*outer_product(u_bar + u_prime_s, u_bar + u_prime_s)) +
                     a_tilde[IMEX_stage - 1][s - 1]*dt*(inv_Ma2*p_prime_s_times_identity);
+            flux -= a[IMEX_stage - 1][s - 1]*dt*(rho_bar*outer_product(u_bar, u_bar)); // Well-balancing term for non-zero u_bar
 
             gravity_term += a_tilde[IMEX_stage - 1][s - 1]*dt*
                             (inv_Fr2*rho_prime_s*e_k);
@@ -1197,6 +1212,7 @@ namespace Atmospheric_Flow {
 
             flux += b[s - 1]*dt*((rho_bar + rho_prime_s)*outer_product(u_bar + u_prime_s, u_bar + u_prime_s)) +
                     b_tilde[s - 1]*dt*(inv_Ma2*p_prime_s_times_identity);
+            flux -= b[s - 1]*dt*(rho_bar*outer_product(u_bar, u_bar)); // Well-balancing term for non-zero u_bar
 
             gravity_term += b_tilde[s - 1]*dt*
                             (inv_Fr2*rho_prime_s*e_k);
@@ -1303,6 +1319,12 @@ namespace Atmospheric_Flow {
                         num_flux.numerical_flux_momentum_implicit(pres_prime_s_m,
                                                                   pres_prime_s_p,
                                                                   n_minus);
+            flux_num -= a[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_momentum_explicit(rho_bar_m,
+                                                                  u_bar_m,
+                                                                  rho_bar_p,
+                                                                  u_bar_p,
+                                                                  n_minus); // Well-balancing term for non-zero u_bar
           }
 
           phi_m.submit_value(-flux_num, q);
@@ -1390,6 +1412,12 @@ namespace Atmospheric_Flow {
                         num_flux.numerical_flux_momentum_implicit(pres_prime_s_m,
                                                                   pres_prime_s_p,
                                                                   n_minus);
+            flux_num -= b[s - 1]*dt*
+                        num_flux.numerical_flux_momentum_explicit(rho_bar_m,
+                                                                  u_bar_m,
+                                                                  rho_bar_p,
+                                                                  u_bar_p,
+                                                                  n_minus); // Well-balancing term for non-zero u_bar
           }
 
           phi_m.submit_value(-flux_num, q);
@@ -1771,9 +1799,15 @@ namespace Atmospheric_Flow {
                      (static_cast<Number>(0.5)*Ma2*scalar_product(u_bar + u_prime_s, u_bar + u_prime_s))*(u_bar + u_prime_s))
                   + a_tilde[IMEX_stage - 1][s - 1]*dt*
                     (inv_Gamma*((pres_bar + pres_prime_s)*(u_bar + u_prime_s)));
+            flux -= (a[IMEX_stage - 1][s - 1]*dt*
+                     (rho_bar*(static_cast<Number>(0.5)*Ma2*scalar_product(u_bar, u_bar))*u_bar) +
+                     a_tilde[IMEX_stage - 1][s - 1]*dt*
+                     (inv_Gamma*(pres_bar*u_bar))); // Well-balancing term for non-zero u_bar
 
             gravity_term += a_tilde[IMEX_stage - 1][s - 1]*dt*
                             (Ma2_ov_Fr2*(rho_bar + rho_prime_s)*(u_bar[dim - 1] + u_prime_s[dim - 1]));
+            gravity_term -= a_tilde[IMEX_stage - 1][s - 1]*dt*
+                            (Ma2_ov_Fr2*(rho_bar*u_bar[dim - 1])); // Well-balancing term for non-zero u_bar
           }
 
           // We assign to the rhs the contribution due to kinetic energy in the fixed point loop.
@@ -1782,6 +1816,8 @@ namespace Atmospheric_Flow {
           const auto& u_prime_fixed_s       = phi_u_prime.back().get_value(q);
           gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
                           (Ma2_ov_Fr2*(rho_bar + rho_prime_for_fixed_s)*(u_bar[dim - 1] + u_prime_fixed_s[dim - 1]));
+          gravity_term -= a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                          (Ma2_ov_Fr2*(rho_bar*u_bar[dim - 1])); // Well-balancing term for non-zero u_bar
 
           phi.submit_value(inv_gamma_m1*pres_prime_old +
                            (rho_bar + rho_prime_old)*
@@ -1856,9 +1892,15 @@ namespace Atmospheric_Flow {
                      (static_cast<Number>(0.5)*Ma2*scalar_product(u_bar + u_prime_s, u_bar + u_prime_s))*(u_bar + u_prime_s))
                   + b_tilde[s - 1]*dt*
                     (inv_Gamma*((pres_bar + pres_prime_s)*(u_bar + u_prime_s)));
+            flux -= (b[s - 1]*dt*
+                     (rho_bar*(static_cast<Number>(0.5)*Ma2*scalar_product(u_bar, u_bar))*u_bar) +
+                     b_tilde[s - 1]*dt*
+                     (inv_Gamma*(pres_bar*u_bar))); // Well-balancing term for non-zero u_bar
 
             gravity_term += b_tilde[s - 1]*dt*
                             (Ma2_ov_Fr2*(rho_bar + rho_prime_s)*(u_bar[dim - 1] + u_prime_s[dim - 1]));
+            gravity_term -= b_tilde[s - 1]*dt*
+                            (Ma2_ov_Fr2*(rho_bar*u_bar[dim - 1])); // Well-balancing term for non-zero u_bar
           }
 
           // We assign to the rhs the contribution due to the (already updated) kinetic energy
@@ -1980,6 +2022,18 @@ namespace Atmospheric_Flow {
                                                                 u_bar_p + u_prime_s_p,
                                                                 pres_bar_p + pres_prime_s_p,
                                                                 n_minus);
+            flux_num -= (a[IMEX_stage - 1][s - 1]*dt*
+                         num_flux.numerical_flux_energy_explicit(rho_bar_m,
+                                                                 u_bar_m,
+                                                                 rho_bar_p,
+                                                                 u_bar_p,
+                                                                 n_minus) +
+                         a_tilde[IMEX_stage - 1][s - 1]*dt*
+                         num_flux.numerical_flux_energy_implicit(u_bar_m,
+                                                                 pres_bar_m,
+                                                                 u_bar_p ,
+                                                                 pres_bar_p,
+                                                                 n_minus)); // Well-balancing term for non-zero u_bar
           }
 
           // Compute the contribution at the current stage
@@ -2097,6 +2151,18 @@ namespace Atmospheric_Flow {
                                                                 u_bar_p + u_prime_s_p,
                                                                 pres_bar_p + pres_prime_s_p,
                                                                 n_minus);
+            flux_num -= (b[s - 1]*dt*
+                         num_flux.numerical_flux_energy_explicit(rho_bar_m,
+                                                                 u_bar_m,
+                                                                 rho_bar_p,
+                                                                 u_bar_p,
+                                                                 n_minus) +
+                         b_tilde[s - 1]*dt*
+                         num_flux.numerical_flux_energy_implicit(u_bar_m,
+                                                                 pres_bar_m,
+                                                                 u_bar_p ,
+                                                                 pres_bar_p,
+                                                                 n_minus)); // Well-balancing term for non-zero u_bar
           }
 
           phi_m.submit_value(-flux_num, q);
