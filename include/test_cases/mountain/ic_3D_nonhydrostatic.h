@@ -34,7 +34,7 @@
 // Some parameters could be read at run-time, but this would be very
 // configuration dependent and the parameter file would become unreadable
 //
-namespace ICBC {
+namespace IC_NonHydrostatic3D {
   using namespace dealii;
 
   /**
@@ -221,7 +221,7 @@ namespace ICBC {
                                                (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
   }
 
-} // namespace ICBC
+} // namespace IC_NonHydrostatic3D
 
 /**
  * @brief 3D non-hydrostatic test case
@@ -232,6 +232,6 @@ namespace ICBC {
 template<unsigned dim, typename T = double>
 using NonHydrostatic3DTestCase = TestCase<dim, T,
                                           RunTimeParameters::MountainParameters,
-                                          ICBC::Density<dim, T>,
-                                          ICBC::Velocity<dim, T>,
-                                          ICBC::Pressure<dim, T>>;
+                                          IC_NonHydrostatic3D::Density<dim, T>,
+                                          IC_NonHydrostatic3D::Velocity<dim, T>,
+                                          IC_NonHydrostatic3D::Pressure<dim, T>>;

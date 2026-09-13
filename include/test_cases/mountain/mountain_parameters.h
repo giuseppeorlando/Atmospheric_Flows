@@ -39,17 +39,17 @@ namespace RunTimeParameters {
    * concrete example. TestCase<...> picks it up automatically if present
    * (again, see test_case.h).
    */
-struct MountainData {
-  // Physical parameters
-  double h, xc, yc, ac;
+  struct MountainData {
+    // Physical parameters
+    double h, xc, yc, ac;
  
-  // Rayleigh damping parameters
-  double z_start, lambda_z;
-  double x_start_left, lambda_x_left;
-  double x_start_right, lambda_x_right;
-  double y_start_left, lambda_y_left;
-  double y_start_right, lambda_y_right;
-};
+    // Rayleigh damping parameters
+    double z_start, lambda_z;
+    double x_start_left, lambda_x_left;
+    double x_start_right, lambda_x_right;
+    double y_start_left, lambda_y_left;
+    double y_start_right, lambda_y_right;
+  };
 
   /**
    * @brief Parser for the parameters related to mountain test cases
