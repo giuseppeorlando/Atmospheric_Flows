@@ -19,6 +19,8 @@
 #include "mountain/ic_3D_nonhydrostatic.h"
 #include "mountain/Rayleigh_damping.h"
 
+#include "baroclinic_wave/ic_baroclinic_wave.h"
+
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -36,6 +38,9 @@ make_test_case(const std::string& tc_name,
   if(tc_name == "3D non-hydrostatic mountain") {
     return std::make_unique<NonHydrostatic3DTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
   }
+  else if(tc_name == "baroclinic wave") {
+    return std::make_unique<BaroclinicWaveTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
+  }
 
   AssertThrow(false,
               dealii::ExcMessage("Unknown test case: " + tc_name));
@@ -50,6 +55,9 @@ make_test_case(const std::string& tc_name,
 void print_help_test_case(const std::string& tc_name) {
   if(tc_name == "3D non-hydrostatic mountain") {
     return print_help_tc<RunTimeParameters::MountainParameters>();
+  }
+  else if(tc_name == "baroclinic wave") {
+    return print_help_tc<RunTimeParameters::BaroclinicWaveParameters>();
   }
 
   AssertThrow(false,

@@ -166,7 +166,7 @@ protected:
   Vec theta_old;
 
   // Damping layers functions for all the unknowns
-  Vec dt_tau_rho;
+  /*Vec dt_tau_rho;
   Vec dt_tau_u;
   Vec dt_tau_pres;
   Vec dt_tau_rho_aux;
@@ -199,7 +199,7 @@ protected:
   Vec dt_tau_pres_left_y;
   Vec dt_tau_rho_aux_left_y;
   Vec dt_tau_u_aux_left_y;
-  Vec dt_tau_pres_aux_left_y;
+  Vec dt_tau_pres_aux_left_y;*/
 
   // Auxiliary structures for the matrix-free
   std::shared_ptr<MatrixFree<dim, Number>> matrix_free_storage;
@@ -217,12 +217,12 @@ protected:
   std::unique_ptr<TestCaseBase<dim, Number>> tc;
 
   // Manifold (mapping) data structures
-  GalChenMapping::PushForward<dim, Number> push_forward;
+  /*GalChenMapping::PushForward<dim, Number> push_forward;
   GalChenMapping::PullBack<dim, Number>    pull_back;
-  FunctionManifold<dim, dim, dim>          manifold;
+  FunctionManifold<dim, dim, dim>          manifold;*/
 
   // Functions for the Rayleigh damping profile
-  RayleighDamping::Rayleigh<dim, 1, Number>       dt_tau;
+  /*RayleighDamping::Rayleigh<dim, 1, Number>       dt_tau;
   RayleighDamping::Rayleigh_Aux<dim, 1, Number>   dt_tau_aux;
   RayleighDamping::Rayleigh<dim, dim, Number>     dt_tau_vel;
   RayleighDamping::Rayleigh_Aux<dim, dim, Number> dt_tau_vel_aux;
@@ -245,7 +245,7 @@ protected:
   RayleighDamping::Rayleigh_LeftY<dim, 1, Number>       dt_tau_left_y;
   RayleighDamping::Rayleigh_Aux_LeftY<dim, 1, Number>   dt_tau_aux_left_y;
   RayleighDamping::Rayleigh_LeftY<dim, dim, Number>     dt_tau_vel_left_y;
-  RayleighDamping::Rayleigh_Aux_LeftY<dim, dim, Number> dt_tau_vel_aux_left_y;
+  RayleighDamping::Rayleigh_Aux_LeftY<dim, dim, Number> dt_tau_vel_aux_left_y;*/
 
   // Now we declare a bunch of variables for output
   fs::path saving_dir; /*!< Auxiliary variable for the directory to save the results */
@@ -375,11 +375,11 @@ EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
   constraints(EquationData::n_vars),
   /*--- Domain ---*/
   tc(make_test_case<dim, Number>(data.tc_name, data.tc_param_file, data)),
-  push_forward(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
+  /*push_forward(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
   pull_back(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
-  manifold(push_forward, pull_back),
+  manifold(push_forward, pull_back),*/
   /*--- Boundary condition (Rayleigh damping) ---*/
-  dt_tau(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
+  /*dt_tau(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
   dt_tau_aux(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
   dt_tau_vel(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
   dt_tau_vel_aux(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
@@ -398,7 +398,7 @@ EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
   dt_tau_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
   dt_tau_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
   dt_tau_vel_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
-  dt_tau_vel_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
+  dt_tau_vel_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),*/
   /*--- Output ---*/
   saving_dir(data.dir),
   pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0),
@@ -494,24 +494,24 @@ void EulerSolver<dim>::create_triangulation(const RunTimeParameters::Data_Storag
 
   Point<dim, Number> lower_left;
   lower_left[0] = static_cast<Number>(data.x_min);
-  lower_left[1] = static_cast<Number>(data.y_min);
-  lower_left[2] = static_cast<Number>(data.z_min);
+  //lower_left[1] = static_cast<Number>(data.y_min);
+  lower_left[1] = static_cast<Number>(data.z_min);
   Point<dim, Number> upper_right;
   upper_right[0] = static_cast<Number>(data.x_max)/
                    static_cast<Number>(data.L_ref);
-  upper_right[1] = static_cast<Number>(data.y_max)/
-                   static_cast<Number>(data.L_ref);
-  upper_right[2] = static_cast<Number>(data.z_max)/
+  //upper_right[1] = static_cast<Number>(data.y_max)/
+  //                 static_cast<Number>(data.L_ref);
+  upper_right[1] = static_cast<Number>(data.z_max)/
                    static_cast<Number>(data.L_ref);
 
   GridGenerator::subdivided_hyper_rectangle(triangulation,
-                                            {data.n_elements_x, data.n_elements_y, data.n_elements_z},
+                                            {data.n_elements_x, data.n_elements_z},
                                             lower_left, upper_right, true);
 
   // Consider periodic conditions along the horizontal direction
   std::vector<GridTools::PeriodicFacePair<typename parallel::distributed::Triangulation<dim>::cell_iterator>> periodic_faces;
   GridTools::collect_periodic_faces(triangulation, 0, 1, 0, periodic_faces);
-  GridTools::collect_periodic_faces(triangulation, 2, 3, 1, periodic_faces);
+  //GridTools::collect_periodic_faces(triangulation, 2, 3, 1, periodic_faces);
   triangulation.add_periodicity(periodic_faces);
 
   // Build the proper triangulation
@@ -523,13 +523,13 @@ void EulerSolver<dim>::create_triangulation(const RunTimeParameters::Data_Storag
   }
 
   // Apply the mapping to build the physical domain
-  GridTools::transform([this](const Point<dim, Number>& chart_point) {
+  /*GridTools::transform([this](const Point<dim, Number>& chart_point) {
                                 return manifold.push_forward(chart_point);
                               },
                               triangulation);
 
   triangulation.set_all_manifold_ids_on_boundary(2*(dim - 1), 111);
-  triangulation.set_manifold(111, manifold);
+  triangulation.set_manifold(111, manifold);*/
 }
 
 // After creating the triangulation, it creates the mesh dependent
@@ -631,7 +631,7 @@ void EulerSolver<dim>::setup_dofs() {
   matrix_free_storage->initialize_dof_vector(extra_rhs_u_prime, EquationData::U_INDEX_DOF);
 
   // Initialize the variables related to the damping layers
-  matrix_free_storage->initialize_dof_vector(dt_tau_u, EquationData::U_INDEX_DOF);
+  /*matrix_free_storage->initialize_dof_vector(dt_tau_u, EquationData::U_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(dt_tau_pres, EquationData::P_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(dt_tau_rho, EquationData::RHO_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(dt_tau_u_aux, EquationData::U_INDEX_DOF);
@@ -694,7 +694,7 @@ void EulerSolver<dim>::setup_dofs() {
   VectorTools::interpolate(dof_handler_density, dt_tau_left_y, dt_tau_rho_left_y);
   VectorTools::interpolate(dof_handler_velocity, dt_tau_vel_aux_left_y, dt_tau_u_aux_left_y);
   VectorTools::interpolate(dof_handler_pressure, dt_tau_aux_left_y, dt_tau_pres_aux_left_y);
-  VectorTools::interpolate(dof_handler_density, dt_tau_aux_left_y, dt_tau_rho_aux_left_y);
+  VectorTools::interpolate(dof_handler_density, dt_tau_aux_left_y, dt_tau_rho_aux_left_y);*/
 
   matrix_free_storage->initialize_dof_vector(u_bar, EquationData::U_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(pres_bar, EquationData::P_INDEX_DOF);
@@ -703,7 +703,7 @@ void EulerSolver<dim>::setup_dofs() {
   VectorTools::interpolate(mapping, dof_handler_pressure, *(tc->ic.pressure), pres_bar);
   VectorTools::interpolate(mapping, dof_handler_density, *(tc->ic.density), rho_bar);
 
-  dt_tau_u.scale(u_bar);
+  /*dt_tau_u.scale(u_bar);
   dt_tau_pres.scale(pres_bar);
   dt_tau_rho.scale(rho_bar);
 
@@ -721,7 +721,7 @@ void EulerSolver<dim>::setup_dofs() {
 
   dt_tau_u_left_y.scale(u_bar);
   dt_tau_pres_left_y.scale(pres_bar);
-  dt_tau_rho_left_y.scale(rho_bar);
+  dt_tau_rho_left_y.scale(rho_bar);*/
 
   // Initialize the auxiliary variable to check the error and stop the fixed point loop
   Vector<Number> error_per_cell_tmp(triangulation.n_active_cells());
@@ -1373,51 +1373,51 @@ void EulerSolver<dim>::run(const bool verbose,
     update_pressure();
 
     // Update before applying damping layer
-    rho_s.front().equ(static_cast<Number>(1.0), rho_s.back());
+    /*rho_s.front().equ(static_cast<Number>(1.0), rho_s.back());
     u_old.equ(static_cast<Number>(1.0), u_bar);
     u_old.add(static_cast<Number>(1.0), u_prime_s.back());
     pres_old.equ(static_cast<Number>(1.0), pres_bar);
-    pres_old.add(static_cast<Number>(1.0), pres_prime_s.front());
+    pres_old.add(static_cast<Number>(1.0), pres_prime_s.front());*/
 
     // Apply the damping layer for the vertical component
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho);
+    /*rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho);
     rho_s.front().scale(dt_tau_rho_aux);
     u_old.add(static_cast<Number>(1.0), dt_tau_u);
     u_old.scale(dt_tau_u_aux);
     pres_old.add(static_cast<Number>(1.0), dt_tau_pres);
-    pres_old.scale(dt_tau_pres_aux);
+    pres_old.scale(dt_tau_pres_aux);*/
 
     // Apply the damping layer for the right lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_right);
+    /*rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_right);
     rho_s.front().scale(dt_tau_rho_aux_right);
     u_old.add(static_cast<Number>(1.0), dt_tau_u_right);
     u_old.scale(dt_tau_u_aux_right);
     pres_old.add(static_cast<Number>(1.0), dt_tau_pres_right);
-    pres_old.scale(dt_tau_pres_aux_right);
+    pres_old.scale(dt_tau_pres_aux_right);*/
 
     // Apply the damping layer for the left lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_left);
+    /*rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_left);
     rho_s.front().scale(dt_tau_rho_aux_left);
     u_old.add(static_cast<Number>(1.0), dt_tau_u_left);
     u_old.scale(dt_tau_u_aux_left);
     pres_old.add(static_cast<Number>(1.0), dt_tau_pres_left);
-    pres_old.scale(dt_tau_pres_aux_left);
+    pres_old.scale(dt_tau_pres_aux_left);*/
 
     // Apply the damping layer for the right y lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_right_y);
+    /*rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_right_y);
     rho_s.front().scale(dt_tau_rho_aux_right_y);
     u_old.add(static_cast<Number>(1.0), dt_tau_u_right_y);
     u_old.scale(dt_tau_u_aux_right_y);
     pres_old.add(static_cast<Number>(1.0), dt_tau_pres_right_y);
-    pres_old.scale(dt_tau_pres_aux_right_y);
+    pres_old.scale(dt_tau_pres_aux_right_y);*/
 
     // Apply the damping layer for the left y lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_left_y);
+    /*rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_left_y);
     rho_s.front().scale(dt_tau_rho_aux_left_y);
     u_old.add(static_cast<Number>(1.0), dt_tau_u_left_y);
     u_old.scale(dt_tau_u_aux_left_y);
     pres_old.add(static_cast<Number>(1.0), dt_tau_pres_left_y);
-    pres_old.scale(dt_tau_pres_aux_left_y);
+    pres_old.scale(dt_tau_pres_aux_left_y);*/
 
     // Update density, velocity, and pressure perturbations for the next step
     rho_prime_s.front().equ(static_cast<Number>(1.0), rho_s.front());
@@ -1433,15 +1433,15 @@ void EulerSolver<dim>::run(const bool verbose,
     pcout << "CFL_c = " << EquationData::degree_u*(max_celerity*dt/h_min) << std::endl;
     const auto max_C_x_y_z = compute_max_C_per_direction();
     pcout << "CFL_c_x = " << max_C_x_y_z[0] << std::endl;
-    pcout << "CFL_c_y = " << max_C_x_y_z[1] << std::endl;
-    pcout << "CFL_c_z = " << max_C_x_y_z[2] << std::endl;
+    pcout << "CFL_c_z = " << max_C_x_y_z[1] << std::endl;
+    //pcout << "CFL_c_z = " << max_C_x_y_z[2] << std::endl;
     const auto max_velocity = get_max_velocity();
     pcout<< "Maximum velocity = " << max_velocity << std::endl;
     pcout << "CFL_u = " << EquationData::degree_u*(max_velocity*dt/h_min) << std::endl;
     const auto max_Cu_x_y_z = compute_max_Cu_per_direction();
     pcout << "CFL_u_x = " << max_Cu_x_y_z[0] << std::endl;
-    pcout << "CFL_u_y = " << max_Cu_x_y_z[1] << std::endl;
-    pcout << "CFL_u_z = " << max_Cu_x_y_z[2] << std::endl;
+    pcout << "CFL_u_z = " << max_Cu_x_y_z[1] << std::endl;
+    //pcout << "CFL_u_z = " << max_Cu_x_y_z[2] << std::endl;
 
     // Recompute time step if needed
     if(dt_from_CFL) {
@@ -1573,7 +1573,7 @@ int main(int argc, char *argv[]) {
     // Initilize Butcher tableaux. The declaration of the coefficients (hard-coded for the moment)
     // is totally relegated here, so this is the only place where we need to modify (much cleaner). ---*/
     const unsigned n_stages = 3;
-    using Number = typename EulerSolver<3>::Number;
+    using Number = typename EulerSolver<2>::Number;
 
     std::vector<std::vector<Number>> a(n_stages, std::vector<Number>(n_stages));
     std::vector<Number> b(n_stages);
@@ -1600,7 +1600,7 @@ int main(int argc, char *argv[]) {
     TimeStepping::RungeKutta<Number> implicit_RK(a_tilde, b_tilde);
 
     // Run the simulation
-    EulerSolver<3> test(data, explicit_RK, implicit_RK);
+    EulerSolver<2> test(data, explicit_RK, implicit_RK);
     test.run(data.verbose, data.output_interval, data.n_files, data.dt_save);
 
     if(curr_rank == 0) {

@@ -1,7 +1,7 @@
 subsection Test case
   # In this subsection we specify the test case
-  set test_case = 3D non-hydrostatic mountain
-  set test_case_parameters = include/test_cases/mountain/ic_3D_nonhydrostatic.prm
+  set test_case = baroclinic wave
+  set test_case_parameters = include/test_cases/baroclinic_wave/ic_baroclinic_wave.prm
 end
 
 subsection Physical data
@@ -10,19 +10,17 @@ subsection Physical data
   set final_time   = 36.0
 
   set x_min = 0.0
-  set y_min = 0.0
   set z_min = 0.0
-  set x_max = 60000.0
-  set y_max = 40000.0
-  set z_max = 16000.0
+  set x_max = 20000000.0
+  set z_max = 30000.0
 
-  set Mach   = 0.03447578013
-  set Froude = 0.10096375546
+  set Mach   = 1.0
+  set Froude = 0.319275428407050
 
-  set L_ref   = 1000.0            # Reference length to build non-dimensional domain
-  set u_ref   = 10.0              # Reference velocity for non-dimensional variables 
-  set p_ref   = 100000.0          # Reference pressure for non-dimensional variables
-  set rho_ref = 1.188579415825103 # Reference density for non-dimensional variables
+  set L_ref   = 1.0 # Reference length to build non-dimensional domain
+  set u_ref   = 1.0 # Reference velocity for non-dimensional variables
+  set p_ref   = 1.0 # Reference pressure for non-dimensional variables
+  set rho_ref = 1.0 # Reference density for non-dimensional variables
 end
 
 subsection Numerical data
@@ -37,10 +35,9 @@ end
 
 subsection Mesh parameters
   # In this subsection we declare the data that is relevant to the domain discretization
-  set n_elements_x = 15 # number of (initial) elements along x direction
-  set n_elements_y = 10 # number of (initial) elements along y direction
-  set n_elements_z = 4  # number of (initial) elements along z direction
-  set n_of_refines = 2  # number of global refines of the initial triangulation
+  set n_elements_x = 40 # number of (initial) elements along x direction
+  set n_elements_z = 6  # number of (initial) elements along z direction
+  set n_of_refines = 0  # number of global refines of the initial triangulation
 end
 
 subsection Data linear solvers
@@ -63,7 +60,7 @@ end
 
 subsection Output data
   # The directory where results are saved
-  set saving directory = 3D_MELVIN_NONHYDROSTATIC_UNIFORM_INVERSE_MASS_MATRIX
+  set saving directory = BAROCLINIC_WAVE_INVERSE_MASS_MATRIX_PERTURBATION
 
   # The output frequency
   set output_interval = 100

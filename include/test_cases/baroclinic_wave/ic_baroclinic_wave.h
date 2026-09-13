@@ -10,7 +10,8 @@
  *
  * ------------------------------------------------------------------------
  *
- * Author: Giuseppe Orlando, 2026
+ * Authors: Letizia Bottani, 2026
+            Giuseppe Orlando, 2026
  */
 #pragma once
 
@@ -21,7 +22,7 @@
 //
 #include <deal.II/base/function.h>
 
-#include "mountain_parameters.h"
+#include "baroclinic_wave_parameters.h"
 #include "../test_case.h"
 
 #include "../../equation_data.h"
@@ -32,7 +33,7 @@
 
 // In this namespace, we declare the initial background conditions
 //
-namespace IC_NonHydrostatic3D {
+namespace IC_Baroclinic {
   using namespace dealii;
 
   /**
@@ -46,7 +47,7 @@ namespace IC_NonHydrostatic3D {
      * @param parameters_ auxiliary structure with parameters specific of the test case
      * @param data_ auxiliary structure with 'generic' parameters
      */
-    Velocity(RunTimeParameters::MountainParameters& parameters_,
+    Velocity(RunTimeParameters::BaroclinicWaveParameters& parameters_,
              RunTimeParameters::Data_Storage& data_);
 
     /**
@@ -66,14 +67,14 @@ namespace IC_NonHydrostatic3D {
                               Vector<T>&           values) const override;
 
   private:
-    RunTimeParameters::MountainParameters& parameters; /*!< Parameters specific of the test case */
-    RunTimeParameters::Data_Storage& data;             /*!< 'Global' parameters */
+    RunTimeParameters::BaroclinicWaveParameters& parameters; /*!< Parameters specific of the test case */
+    RunTimeParameters::Data_Storage& data;                   /*!< 'Global' parameters */
   };
 
   // Constructor which relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Velocity<dim, T>::Velocity(RunTimeParameters::MountainParameters& parameters_,
+  Velocity<dim, T>::Velocity(RunTimeParameters::BaroclinicWaveParameters& parameters_,
                              RunTimeParameters::Data_Storage& data_):
     Function<dim, T>(dim, data_.initial_time), parameters(parameters_), data(data_) {}
 
@@ -116,7 +117,7 @@ namespace IC_NonHydrostatic3D {
      * @param parameters_ auxiliary structure with parameters specific of the test case
      * @param data_ auxiliary structure with 'generic' parameters
      */
-    Pressure(RunTimeParameters::MountainParameters& parameters_,
+    Pressure(RunTimeParameters::BaroclinicWaveParameters& parameters_,
              RunTimeParameters::Data_Storage& data_);
 
     /**
@@ -128,14 +129,14 @@ namespace IC_NonHydrostatic3D {
                     const unsigned       component = 0) const override;
 
   private:
-    RunTimeParameters::MountainParameters& parameters; /*!< Parameters specific of the test case */
-    RunTimeParameters::Data_Storage& data;             /*!< 'Global' parameters */
+    RunTimeParameters::BaroclinicWaveParameters& parameters; /*!< Parameters specific of the test case */
+    RunTimeParameters::Data_Storage& data;                   /*!< 'Global' parameters */
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Pressure<dim, T>::Pressure(RunTimeParameters::MountainParameters& parameters_,
+  Pressure<dim, T>::Pressure(RunTimeParameters::BaroclinicWaveParameters& parameters_,
                              RunTimeParameters::Data_Storage& data_):
     Function<dim, T>(1, data_.initial_time), parameters(parameters_), data(data_) {}
 
@@ -148,15 +149,10 @@ namespace IC_NonHydrostatic3D {
     (void)component;
     AssertIndexRange(component, 1);
 
-    const auto Gamma  = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
-                        static_cast<T>(EquationData::Cp_Cv);
+    const auto z = p[dim - 1]*data.L_ref;
 
-    const auto pi_bar = static_cast<T>(1.0)
-                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(parameters.N*parameters.N)*
-                        Gamma/(static_cast<T>(EquationData::R)*parameters.T_bar)*
-                        (static_cast<T>(1.0) - std::exp(-parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref));
-
-    return (parameters.p_bar/data.p_ref)*std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
+    return (parameters.p_bar/data.p_ref)*
+           std::exp(-static_cast<T>(EquationData::g)*z/(static_cast<T>(EquationData::R)*parameters.T_bar));
   }
 
 
@@ -171,7 +167,7 @@ namespace IC_NonHydrostatic3D {
      * @param parameters_ auxiliary structure with parameters specific of the test case
      * @param data_ auxiliary structure with 'generic' parameters
      */
-    Density(RunTimeParameters::MountainParameters& parameters_,
+    Density(RunTimeParameters::BaroclinicWaveParameters& parameters_,
             RunTimeParameters::Data_Storage& data_);
 
     /**
@@ -182,14 +178,14 @@ namespace IC_NonHydrostatic3D {
     virtual T value(const Point<dim, T>& p,
                     const unsigned       component = 0) const override;
   private:
-    RunTimeParameters::MountainParameters& parameters; /*!< Parameters specific of the test case */
-    RunTimeParameters::Data_Storage& data;             /*!< 'Global' parameters */
+    RunTimeParameters::BaroclinicWaveParameters& parameters; /*!< Parameters specific of the test case */
+    RunTimeParameters::Data_Storage& data;                   /*!< 'Global' parameters */
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Density<dim, T>::Density(RunTimeParameters::MountainParameters& parameters_,
+  Density<dim, T>::Density(RunTimeParameters::BaroclinicWaveParameters& parameters_,
                            RunTimeParameters::Data_Storage& data_):
     Function<dim, T>(1, data_.initial_time), parameters(parameters_), data(data_) {}
 
@@ -202,24 +198,15 @@ namespace IC_NonHydrostatic3D {
     (void)component;
     AssertIndexRange(component, 1);
 
-    const auto Gamma  = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
-                        static_cast<T>(EquationData::Cp_Cv);
+    const auto z = p[dim - 1]*data.L_ref;
 
-    const auto pi_bar = static_cast<T>(1.0)
-                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(parameters.N*parameters.N)*
-                        Gamma/(static_cast<T>(EquationData::R)*parameters.T_bar)*
-                        (static_cast<T>(1.0) - std::exp(-parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref));
+    const auto pres = parameters.p_bar*
+                      std::exp(-static_cast<T>(EquationData::g)*z/(static_cast<T>(EquationData::R)*parameters.T_bar));
 
-    const auto theta_bar = parameters.T_bar*std::exp(parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref);
-
-    const auto rho_bar = parameters.p_bar/(static_cast<T>(EquationData::R)*parameters.T_bar);
-
-    return (rho_bar/data.rho_ref)*
-           parameters.T_bar/theta_bar*std::pow(pi_bar, static_cast<T>(1.0)/
-                                               (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
+    return (pres/(static_cast<T>(EquationData::R)*parameters.T_bar))/data.rho_ref;
   }
 
-} // namespace IC_NonHydrostatic3D
+} // namespace IC_Baroclinic
 
 /**
  * @brief 3D non-hydrostatic test case
@@ -228,8 +215,8 @@ namespace IC_NonHydrostatic3D {
  * implementations from the solver.
  */
 template<unsigned dim, typename T = double>
-using NonHydrostatic3DTestCase = TestCase<dim, T,
-                                          RunTimeParameters::MountainParameters,
-                                          IC_NonHydrostatic3D::Density<dim, T>,
-                                          IC_NonHydrostatic3D::Velocity<dim, T>,
-                                          IC_NonHydrostatic3D::Pressure<dim, T>>;
+using BaroclinicWaveTestCase = TestCase<dim, T,
+                                        RunTimeParameters::BaroclinicWaveParameters,
+                                        IC_Baroclinic::Density<dim, T>,
+                                        IC_Baroclinic::Velocity<dim, T>,
+                                        IC_Baroclinic::Pressure<dim, T>>;

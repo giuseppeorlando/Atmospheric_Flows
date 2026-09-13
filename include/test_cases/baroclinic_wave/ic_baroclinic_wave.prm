@@ -1,0 +1,6 @@
+subsection Physical data
+  # In this subsection we declare the physical data for the specific configuration
+  set u_bar = 35.0     # Background horizontal velocity 
+  set p_bar = 100000.0 # Background pressure (z = 0)
+  set T_bar = 288.0    # Background temperature (z = 0)
+end
