@@ -52,6 +52,12 @@ struct TestCaseBase {
        case whose Parameters class does not opt in (see
        internal::has_mountain_data below) simply leaves this untouched. */
   std::unique_ptr<RunTimeParameters::MountainData> mountain_data;
+
+  /*!< True iff the concrete Parameters class actually opted into
+       supplying mountain_data (see internal::mountain_data below).
+       The solver uses this to skip mesh deformation/manifold attachment
+       and Rayleigh damping entirely for a test case that has none. */
+  bool has_mountain_data = false;
 };
 
 namespace internal {
@@ -179,7 +185,8 @@ TestCase(const std::string& tc_param_file,
   parameters.parse_parameters(prm);
 
   if constexpr(internal::has_mountain_data<Parameters>::value) {
-    this->mountain_data = std::make_unique<RunTimeParameters::MountainData>(parameters.mountain_data);
+    this->mountain_data     = std::make_unique<RunTimeParameters::MountainData>(parameters.mountain_data);
+    this->has_mountain_data = true;
   }
 
   this->ic.density  = internal::make_ic_function<Parameters, DensityFunction>(parameters, data);
