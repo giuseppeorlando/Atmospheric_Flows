@@ -1609,7 +1609,7 @@ int main(int argc, char *argv[]) {
         }
         parameter_file = argv[++i];
       }
-      else if(arg == "--help_test_case" || arg == "--help_EOS") {
+      else if(arg == "--help_test_case") {
         continue;
       }
       else {

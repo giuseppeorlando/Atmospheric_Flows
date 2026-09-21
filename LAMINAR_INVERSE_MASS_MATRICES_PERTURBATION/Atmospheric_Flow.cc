@@ -1373,11 +1373,11 @@ void EulerSolver<dim>::run(const bool verbose,
     update_pressure();
 
     // Update before applying damping layer
-    /*rho_s.front().equ(static_cast<Number>(1.0), rho_s.back());
+    rho_s.front().equ(static_cast<Number>(1.0), rho_s.back());
     u_old.equ(static_cast<Number>(1.0), u_bar);
     u_old.add(static_cast<Number>(1.0), u_prime_s.back());
     pres_old.equ(static_cast<Number>(1.0), pres_bar);
-    pres_old.add(static_cast<Number>(1.0), pres_prime_s.front());*/
+    pres_old.add(static_cast<Number>(1.0), pres_prime_s.front());
 
     // Apply the damping layer for the vertical component
     /*rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho);
@@ -1542,7 +1542,7 @@ int main(int argc, char *argv[]) {
         }
         parameter_file = argv[++i];
       }
-      else if(arg == "--help_test_case" || arg == "--help_EOS") {
+      else if(arg == "--help_test_case") {
         continue;
       }
       else {
