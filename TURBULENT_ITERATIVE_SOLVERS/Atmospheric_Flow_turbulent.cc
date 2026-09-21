@@ -1853,6 +1853,9 @@ int main(int argc, char *argv[]) {
         }
         parameter_file = argv[++i];
       }
+      else if(arg == "--help_test_case") {
+        continue;
+      }
       else {
         std::cerr << "Unknown option: " << arg << "\n";
         print_help(argv[0]);
