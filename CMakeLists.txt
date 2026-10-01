@@ -17,9 +17,12 @@ SET(TARGET "Atmospheric_Flow")
 # page of the documentation.
 SET(TARGET_SRC ${TARGET}.cc)
 
+# Put executable in source directory
+SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 # Usually, you will not need to modify anything beyond this point...
 
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
 FIND_PACKAGE(
   deal.II 9.5.1
