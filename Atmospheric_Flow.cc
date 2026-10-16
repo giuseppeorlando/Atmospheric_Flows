@@ -353,10 +353,10 @@ EulerSolver<dim>::EulerSolver(const RunTimeParameters::Data_Storage& data,
   manifold(push_forward, pull_back),
   /*--- Initial condition ---*/
   rho_init(data.p_bar, data.T_bar, data.rho_ref, data.L_ref,
-           data.T_ref, data.initial_time),
+           data.N, data. T_ref, data.initial_time),
   u_init(data.u_bar, data.u_ref, data.initial_time),
   pres_init(data.p_bar, data.T_bar, data.p_ref, data.L_ref,
-            data.T_ref, data.initial_time),
+            data.N, data.T_ref, data.initial_time),
   /*--- Boundary condition (Rayleigh damping) ---*/
   dt_tau(data.z_start, data.z_max, data.lambda_z, data.L_ref),
   dt_tau_aux(data.z_start, data.z_max, data.lambda_z, data.L_ref),

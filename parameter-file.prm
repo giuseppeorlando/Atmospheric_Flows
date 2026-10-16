@@ -58,7 +58,7 @@ subsection Mesh parameters
   set n_elements_x = 15 # number of (initial) elements along x direction
   set n_elements_y = 10 # number of (initial) elements along y direction
   set n_elements_z = 4  # number of (initial) elements along z direction
-  set n_of_refines = 2  # number of global refines of the initial triangulation
+  set n_of_refines = 1  # number of global refines of the initial triangulation
 end
 
 subsection Data linear solvers

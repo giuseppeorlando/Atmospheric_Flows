@@ -84,7 +84,7 @@ namespace ICBC {
   public:
     Pressure(const T p_bar_, const T T_bar_,
              const T p_ref_, const T L_ref_,
-             const T N_,
+             const T N_, const T T_ref_,
              const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
@@ -93,6 +93,7 @@ namespace ICBC {
   private:
     T p_bar; /*--- Background pressure ---*/
     T T_bar; /*--- Background temeprature ---*/
+    T T_ref; /*--- Reference temperature (for non-dimensional variables) ---*/
 
     T p_ref; /*--- Reference pressure (for non-dimensional variables) ---*/
     T L_ref; /*--- Reference length (for non-dimensional variables) ---*/
@@ -105,10 +106,10 @@ namespace ICBC {
   template<unsigned dim, typename T>
   Pressure<dim, T>::Pressure(const T p_bar_, const T T_bar_,
                              const T p_ref_, const T L_ref_,
-                             const T N_,
+                             const T N_, const T T_ref_,
                              const T initial_time):
     Function<dim, T>(1, initial_time),
-    p_bar(p_bar_), T_bar(T_bar_), p_ref(p_ref_), L_ref(L_ref_), N(N_) {}
+    p_bar(p_bar_), T_bar(T_bar_), p_ref(p_ref_), L_ref(L_ref_), N(N_), T_ref(T_ref_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -127,7 +128,7 @@ namespace ICBC {
                         Gamma/(static_cast<T>(EquationData::R)*T_bar)*
                         (static_cast<T>(1.0) - std::exp(-N*N/static_cast<T>(EquationData::g)*p[2]*L_ref));
 
-    return std::pow(pi_bar, static_cast<T>(1.0)/Gamma);//(p_bar/p_ref)*
+    return (p_bar/p_ref)*std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
   }
 
 
@@ -139,7 +140,7 @@ namespace ICBC {
   public:
     Density(const T p_bar_, const T T_bar_,
             const T rho_ref_, const T L_ref_,
-            const T N_,
+            const T N_, const T T_ref_,
             const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
@@ -150,7 +151,7 @@ namespace ICBC {
 
     T rho_ref; /*--- Reference density (for non-dimensional variables) ---*/
     T L_ref;   /*--- Reference length (for non-dimensional variables) ---*/
-
+    T T_ref;   /*--- Reference temperature (for non-dimensional variables) ---*/
     T N; /*--- Buoyancy frequency ---*/
   };
 
@@ -159,10 +160,10 @@ namespace ICBC {
   template<unsigned dim, typename T>
   Density<dim, T>::Density(const T p_bar_, const T T_bar_,
                            const T rho_ref_, const T L_ref_,
-                           const T N_,
+                           const T N_,const T T_ref_,
                            const T initial_time):
     Function<dim, T>(1, initial_time),
-    p_bar(p_bar_), T_bar(T_bar_), rho_ref(rho_ref_), L_ref(L_ref_), N(N_) {}
+    p_bar(p_bar_), T_bar(T_bar_), rho_ref(rho_ref_), T_ref(T_ref_), L_ref(L_ref_), N(N_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -185,8 +186,8 @@ namespace ICBC {
 
     const auto rho_bar = p_bar/(static_cast<T>(EquationData::R)*T_bar);
 
-    return std::pow(pi_bar, static_cast<T>(1.0)/
-                                            (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))); //(rho_bar/rho_ref)*T_bar/theta_bar*
+    return (rho_bar/rho_ref)*T_bar/theta_bar*std::pow(pi_bar, static_cast<T>(1.0)/
+                                            (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))); 
   }
 
 } // namespace EquationData

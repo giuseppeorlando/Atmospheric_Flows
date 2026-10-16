@@ -82,8 +82,8 @@ namespace ICBC {
   template<unsigned dim, typename T = double>
   class Pressure: public Function<dim, T> {
   public:
-    Pressure(const T p_ref_, const T L_ref_,
-             const T T_ref_,
+    Pressure(const T p_bar_, const T L_ref_,
+             const T T_bar_,
              const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
@@ -91,19 +91,19 @@ namespace ICBC {
 
   private:
     
-    T p_ref; /*--- Reference pressure (for non-dimensional variables) ---*/
+    T p_bar; /*--- Reference pressure (for non-dimensional variables) ---*/
     T L_ref; /*--- Reference length (for non-dimensional variables) ---*/
-    T T_ref; /*--- Reference temperature (for non-dimensional variables) ---*/
+    T T_bar; /*--- Reference temperature (for non-dimensional variables) ---*/
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Pressure<dim, T>::Pressure(const T p_ref_, const T L_ref_,
-                             const T T_ref_,
+  Pressure<dim, T>::Pressure(const T p_bar_, const T L_ref_,
+                             const T T_bar_,
                              const T initial_time):
     Function<dim, T>(1, initial_time),
-    p_ref(p_ref_), L_ref(L_ref_), T_ref(T_ref_) {}
+    p_bar(p_bar_), L_ref(L_ref_), T_bar(T_bar_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -114,8 +114,8 @@ namespace ICBC {
     (void)component;
     AssertIndexRange(component, 1);
 
-    static const double delta= EquationData::g/(EquationData::R*T_ref); /*--- scale-height parameter ---*/
-    const auto p0 = p_ref *std::exp(-delta * p[1]* L_ref);
+    static const double delta= EquationData::g/(EquationData::R*T_bar); /*--- scale-height parameter ---*/
+    const auto p0 = p_bar *std::exp(-delta * p[1]* L_ref);
     return p0;
   }
 
@@ -126,19 +126,19 @@ namespace ICBC {
   template<unsigned dim, typename T = double>
   class Density: public Function<dim, T> {
   public:
-    Density(const T rho_ref_, const T L_ref_,
-            const T T_ref_,
+    Density(const T rho_bar_, const T L_ref_,
+            const T T_bar_,
             const T H_, const T xc_, const T ac_,
             const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
                     const unsigned       component = 0) const override; /*--- Evaluation of the density ---*/
   private:
-    T rho_ref; /*--- Reference density (for non-dimensional variables) ---*/
+    T rho_bar; /*--- Reference density (for non-dimensional variables) ---*/
     T L_ref;   /*--- Reference length (for non-dimensional variables) ---*/
-    T T_ref;   /*--- Reference temperature (for non-dimensional variables) ---*/
+    T T_bar;   /*--- Reference temperature (for non-dimensional variables) ---*/
 
-    T H; /*--- Height of the perturbation ---*/
+    T h; /*--- Height of the perturbation ---*/
     T xc; /*--- Center of the perturbation ---*/
     T ac; /*--- amplitude of the perturbation ---*/
     
@@ -147,12 +147,12 @@ namespace ICBC {
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Density<dim, T>::Density(const T rho_ref_, const T L_ref_,
-                           const T T_ref_,
-                           const T H_, const T xc_, const T ac_,
+  Density<dim, T>::Density(const T rho_bar_, const T L_ref_,
+                           const T T_bar_,
+                           const T h_, const T xc_, const T ac_,
                            const T initial_time):
     Function<dim, T>(1, initial_time),
-    rho_ref(rho_ref_), L_ref(L_ref_), T_ref(T_ref_),H(H_),xc(xc_),ac(ac_) {}
+    rho_bar(rho_bar_), L_ref(L_ref_), T_bar(T_bar_),h(h_),xc(xc_),ac(ac_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -163,15 +163,15 @@ namespace ICBC {
     (void)component;
     AssertIndexRange(component, 1);
 
-    static const double delta= EquationData::g/(EquationData::R*T_ref); /*--- scale-height parameter ---*/
+    static const double delta= EquationData::g/(EquationData::R*T_bar); /*--- scale-height parameter ---*/
     
-    const auto rho0 = rho_ref * std::exp(-delta * p[1]* L_ref);
+    const auto rho0 = rho_bar * std::exp(-delta * p[1]* L_ref);
 
     const auto r  = (p[0]* L_ref - xc) /ac;
 
-    const auto Tb = static_cast<T>(0.01) * std::exp(-r * r) *std::sin(numbers::PI * p[1] * L_ref / H); 
+    const auto Tb = static_cast<T>(0.01) * std::exp(-r * r) *std::sin(numbers::PI * p[1] * L_ref / h); 
       
-    const auto rho_b0 = - rho_ref *Tb / T_ref;
+    const auto rho_b0 = - rho_bar *Tb / T_bar;
     
     const auto rho_prime =std::exp(-static_cast<T>(0.5) * delta * p[1] * L_ref) *rho_b0;
 
@@ -184,27 +184,27 @@ namespace ICBC {
   template<unsigned dim, typename T = double>
   class Density_Bar: public Function<dim, T> {
   public:
-    Density_Bar(const T rho_ref_, const T L_ref_,
-            const T T_ref_,
+    Density_Bar(const T rho_bar_, const T L_ref_,
+            const T T_bar_,
             const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
                     const unsigned       component = 0) const override; /*--- Evaluation of the density ---*/
   private:
-    T rho_ref; /*--- Reference density (for non-dimensional variables) ---*/
+    T rho_bar; /*--- Reference density (for non-dimensional variables) ---*/
     T L_ref;   /*--- Reference length (for non-dimensional variables) ---*/
-    T T_ref;   /*--- Reference temperature (for non-dimensional variables) ---*/
+    T T_bar;   /*--- Reference temperature (for non-dimensional variables) ---*/
     
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Density_Bar<dim, T>::Density_Bar(const T rho_ref_, const T L_ref_,
-                           const T T_ref_,
+  Density_Bar<dim, T>::Density_Bar(const T rho_bar_, const T L_ref_,
+                           const T T_bar_,
                            const T initial_time):
     Function<dim, T>(1, initial_time),
-    rho_ref(rho_ref_), L_ref(L_ref_), T_ref(T_ref_) {}
+    rho_bar(rho_bar_), L_ref(L_ref_), T_bar(T_bar_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -215,9 +215,9 @@ namespace ICBC {
     (void)component;
     AssertIndexRange(component, 1);
 
-    static const double delta= EquationData::g/(EquationData::R*T_ref); /*--- scale-height parameter ---*/
+    static const double delta= EquationData::g/(EquationData::R*T_bar); /*--- scale-height parameter ---*/
     
-    const auto rho0 = rho_ref * std::exp(-delta * p[1]* L_ref);
+    const auto rho0 = rho_bar * std::exp(-delta * p[1]* L_ref);
 
     return rho0;
   }

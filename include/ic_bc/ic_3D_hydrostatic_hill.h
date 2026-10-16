@@ -84,7 +84,7 @@ template<unsigned dim, typename T>
   class Pressure: public Function<dim, T> {
   public:
     Pressure(const T p_bar_, const T T_bar_,
-             const T p_ref_, const T L_ref_,
+             const T p_ref_, const T L_ref_, const T N_,
              const T T_ref_,const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
@@ -92,7 +92,7 @@ template<unsigned dim, typename T>
 private:
     T p_bar; /*--- Background pressure ---*/
     T T_bar; /*--- Background temeprature ---*/
-
+    T N; /*--- Buoyancy frequency ---*/
     T p_ref; /*--- Reference pressure (for non-dimensional variables) ---*/
     T L_ref; /*--- Reference length (for non-dimensional variables) ---*/
 
@@ -102,12 +102,13 @@ private:
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Pressure<dim, T>::Pressure(const T p_bar_, const T T_bar_, const T p_ref_, const T L_ref_, const T T_ref_, const T initial_time):
+  Pressure<dim, T>::Pressure(const T p_bar_, const T T_bar_, const T p_ref_, const T L_ref_,const T N_, const T T_ref_, const T initial_time):
     Function<dim, T>(1, initial_time),
     p_bar(p_bar_),
     T_bar(T_bar_),
     p_ref(p_ref_),
     L_ref(L_ref_),
+    N(N_),
     T_ref(T_ref_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
@@ -123,9 +124,9 @@ private:
                         static_cast<T>(EquationData::Cp_Cv);
     const auto Cp     = static_cast<T>(EquationData::R)/Gamma;
 
-    const auto pi_bar = std::exp(-static_cast<T>(EquationData::g)/(Cp*T_ref)*p[2]*L_ref); /*--- Background Exner pressure ---*/
+    const auto pi_bar = exp(-static_cast<T>(EquationData::g)/(Cp*T_bar) * p[2] * L_ref);
 
-    return std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
+    return (p_bar/p_ref) * pow(pi_bar, 1.0/Gamma);
   }
 
 
@@ -137,7 +138,7 @@ private:
   class Density: public Function<dim, T> {
   public:
     Density(const T p_bar_, const T T_bar_,
-            const T rho_ref_, const T L_ref_,
+            const T rho_ref_, const T L_ref_, const T N_,
             const T T_ref_,const T initial_time = static_cast<T>(0.0)); /*--- Class constructor ---*/
 
     virtual T value(const Point<dim, T>& p,
@@ -148,19 +149,20 @@ private:
 
     T rho_ref; /*--- Reference density (for non-dimensional variables) ---*/
     T L_ref;   /*--- Reference length (for non-dimensional variables) ---*/
-
+    T N;       /*--- Buoyancy frequency (for non-dimensional variables) ---*/
     T T_ref; /*--- Reference temperature (for non-dimensional variables) ---*/
 };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
-  Density<dim, T>::Density(const T p_bar_, const T T_bar_, const T rho_ref_, const T L_ref_, const T T_ref_, const T initial_time):
+  Density<dim, T>::Density(const T p_bar_, const T T_bar_, const T rho_ref_, const T L_ref_, const T N_, const T T_ref_, const T initial_time):
     Function<dim, T>(1, initial_time),
     p_bar(p_bar_),
     T_bar(T_bar_),
     rho_ref(rho_ref_),
     L_ref(L_ref_),
+    N(N_),  
     T_ref(T_ref_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
@@ -171,14 +173,16 @@ private:
                            const unsigned       component) const {
     (void)component;
     AssertIndexRange(component, 1);
-
     const auto Gamma  = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
                         static_cast<T>(EquationData::Cp_Cv);
     const auto Cp     = static_cast<T>(EquationData::R)/Gamma;
+    
+    const auto rho_bar = p_bar/(static_cast<T>(EquationData::R)*T_bar);
 
-    const auto pi_bar = std::exp(-static_cast<T>(EquationData::g)/(Cp*T_ref)*p[2]*L_ref); /*--- Background Exner pressure ---*/
+    const auto pi_bar =
+        exp(-static_cast<T>(EquationData::g)/(Cp*T_bar) * p[2] * L_ref);
 
-    return std::pow(pi_bar, static_cast<T>(1.0)/Gamma); //static_cast<T>(EquationData::rho_ref)*
+    return (rho_bar/rho_ref) * pow(pi_bar, 1.0/Gamma);
   }
 
 } // namespace EquationData
