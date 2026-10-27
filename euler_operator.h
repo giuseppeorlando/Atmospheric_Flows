@@ -27,6 +27,7 @@
 #include "include/io/runtime_parameters.h"
 #include "include/equation_data.h"
 #include "include/physics/vertical_slice.h"
+#include "include/physics/rotation.h"
 #include "include/space_discretization/numerical_flux/Rusanov_flux.h"
 #include "include/time_integrator/runge_kutta.h"
 
@@ -84,6 +85,20 @@ namespace Atmospheric_Flow {
     Number get_Froude() const;
 
     /**
+     * Getter of Rossby number. This is useful for debugging information
+     * @return Ro Rossby number
+     */
+    inline DEAL_II_ALWAYS_INLINE
+    Number get_Rossby() const;
+
+    /**
+     * Getter of the formulation of the rotation term
+     * @return rotation formulation of the rotation term
+     */
+    inline DEAL_II_ALWAYS_INLINE
+    Rotation::Formulation get_rotation_formulation() const;
+
+    /**
      * Setter of the current IMEX stage
      * @param current IMEX stage
      */
@@ -117,6 +132,13 @@ namespace Atmospheric_Flow {
      * @param src current pressure
      */
     void set_pres_fixed(const Vec& src);
+
+    /**
+     * Setter of the background velocity. The Coriolis force acts on the velocity
+     * relative to the background velocity (only meaningful in presence of rotation)
+     * @param src background velocity
+     */
+    void set_background_velocity(const Vec& src);
 
     // Auxiliary routines to compute the rhs
     /**
@@ -178,6 +200,9 @@ namespace Atmospheric_Flow {
 
     Number Ma; /*!< Mach number */
     Number Fr; /*!< Froude number */
+    Number Ro; /*!< Rossby number */
+
+    Rotation::Formulation rotation; /*!< Formulation of the rotation term */
 
     Number dt; /*!< Time step */
 
@@ -204,6 +229,8 @@ namespace Atmospheric_Flow {
     Vec rho_for_fixed,
         pres_fixed; // Auxiliary vectors for fixed point loop
 
+    Vec u_bar; /*!< Background velocity (only meaningful in presence of rotation) */
+
     // Auxiliary function for the numerical flux
     NumericalFlux::RusanovFluxEuler<EquationData::n_comp_u, VectorizedArray<Number>> num_flux;
 
@@ -214,6 +241,7 @@ namespace Atmospheric_Flow {
     Number gamma_m1;     /*!< gamma - 1 (gamma ratio specific heats) */
     Number inv_gamma_m1; /*!< Inverse gamma - 1 */
     Number inv_Gamma;    /*!< gamma/(gamma - 1) */
+    Number inv_Ro;       /*!< Inverse of Rossby number */
 
     Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> e_k; /*!< Unit normal vector along vertical direction */
     Tensor<2, EquationData::n_comp_u, VectorizedArray<Number>> identity; /*!< Identity tensor */
@@ -493,12 +521,14 @@ namespace Atmospheric_Flow {
                 n_q_points_1d, n_q_points_1d_boundary,
                 Vec>::
   EULEROperator():
-    MatrixFreeOperators::Base<dim, Vec>(), Ma(), Fr(), dt(),
+    MatrixFreeOperators::Base<dim, Vec>(), Ma(), Fr(), Ro(),
+    rotation(Rotation::Formulation::none), dt(),
     IMEX_stage(1), Euler_stage(1), num_flux(),
     Ma2(), inv_Ma2(), inv_Fr2(), Ma2_ov_Fr2(),
     gamma_m1(static_cast<Number>(EquationData::Cp_Cv) - static_cast<Number>(1.0)),
     inv_gamma_m1(static_cast<Number>(1.0)/gamma_m1),
-    inv_Gamma(static_cast<Number>(EquationData::Cp_Cv)*inv_gamma_m1)
+    inv_Gamma(static_cast<Number>(EquationData::Cp_Cv)*inv_gamma_m1),
+    inv_Ro()
     {
       // We create auxiliary vectors and tensors that will never change
       // independently on the stage, so we declare it once and for all
@@ -530,6 +560,8 @@ namespace Atmospheric_Flow {
     MatrixFreeOperators::Base<dim, Vec>(),
     Ma(static_cast<Number>(data.Mach)),
     Fr(static_cast<Number>(data.Froude)),
+    Ro(static_cast<Number>(data.Rossby)),
+    rotation(Rotation::string_to_formulation(data.rotation_formulation)),
     dt(data.dt),
     n_stages(explicit_RK.get_n_stages()),
     IMEX_stage(1), Euler_stage(1), num_flux(Ma),
@@ -537,7 +569,8 @@ namespace Atmospheric_Flow {
     inv_Fr2(static_cast<Number>(1.0)/(Fr*Fr)), Ma2_ov_Fr2(Ma2*inv_Fr2),
     gamma_m1(static_cast<Number>(EquationData::Cp_Cv) - static_cast<Number>(1.0)),
     inv_gamma_m1(static_cast<Number>(1.0)/gamma_m1),
-    inv_Gamma(static_cast<Number>(EquationData::Cp_Cv)*inv_gamma_m1)
+    inv_Gamma(static_cast<Number>(EquationData::Cp_Cv)*inv_gamma_m1),
+    inv_Ro(static_cast<Number>(1.0)/Ro)
     {
       // We create auxiliary vectors and tensors that will never change
       // independently on the stage, so we declare it once and for all
@@ -616,6 +649,41 @@ namespace Atmospheric_Flow {
                 Vec>::
   get_Froude() const {
     return Fr;
+  }
+
+  // Getter of Rossby number
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  typename EULEROperator<dim,
+                         fe_degree_u, fe_degree_rho, fe_degree_p,
+                         n_q_points_1d, n_q_points_1d_boundary,
+                         Vec>::Number
+  EULEROperator<dim,
+                fe_degree_u, fe_degree_rho, fe_degree_p,
+                n_q_points_1d, n_q_points_1d_boundary,
+                Vec>::
+  get_Rossby() const {
+    return Ro;
+  }
+
+  // Getter of the formulation of the rotation term
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  Rotation::Formulation
+  EULEROperator<dim,
+                fe_degree_u, fe_degree_rho, fe_degree_p,
+                n_q_points_1d, n_q_points_1d_boundary,
+                Vec>::
+  get_rotation_formulation() const {
+    return rotation;
   }
 
   // Setter of IMEX stage (this can be known only during the effective execution
@@ -701,6 +769,21 @@ namespace Atmospheric_Flow {
   set_pres_fixed(const Vec& src) {
     pres_fixed = src;
     pres_fixed.update_ghost_values();
+  }
+
+  // Setter of background velocity (for the Coriolis force)
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  set_background_velocity(const Vec& src) {
+    u_bar = src;
+    u_bar.update_ghost_values();
   }
 
 
@@ -1015,6 +1098,8 @@ namespace Atmospheric_Flow {
       std::vector<FEEvaluation_u>    phi_u(IMEX_stage - 1, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
       std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
       std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+      FEEvaluation_u                 phi_u_bar(data, EquationData::U_INDEX_DOF),
+                                     phi_u_fixed(data, EquationData::U_INDEX_DOF);
 
       // Loop over all cells
       for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
@@ -1029,6 +1114,17 @@ namespace Atmospheric_Flow {
         phi_rho.back().reinit(cell);
         phi_rho.back().gather_evaluate(src[3*(IMEX_stage - 1)], EvaluationFlags::values);
 
+        // Read the background velocity and, for the R1 formulation, the current velocity
+        // of the fixed point loop (only in presence of rotation)
+        if(rotation != Rotation::Formulation::none) {
+          phi_u_bar.reinit(cell);
+          phi_u_bar.gather_evaluate(u_bar, EvaluationFlags::values);
+        }
+        if(rotation == Rotation::Formulation::R1) {
+          phi_u_fixed.reinit(cell);
+          phi_u_fixed.gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
+        }
+
         phi.reinit(cell);
 
         // Loop over all quadrature points
@@ -1041,6 +1137,7 @@ namespace Atmospheric_Flow {
           // Compute the quantities at the previous stages
           Tensor<2, EquationData::n_comp_u, VectorizedArray<Number>> flux;
           Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> gravity_term;
+          Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> rotation_term;
           for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
             const auto& u_s = phi_u[s - 1].get_value(q);
 
@@ -1052,13 +1149,25 @@ namespace Atmospheric_Flow {
                     a_tilde[IMEX_stage - 1][s - 1]*dt*(inv_Ma2*p_s_times_identity);
 
             gravity_term += a_tilde[IMEX_stage - 1][s - 1]*dt*(inv_Fr2*rho_s*e_k);
+
+            if(rotation != Rotation::Formulation::none) {
+              rotation_term += a_tilde[IMEX_stage - 1][s - 1]*dt*
+                               Rotation::coriolis_term(rho_s, u_s - phi_u_bar.get_value(q), inv_Ro);
+            }
           }
 
           // Add last contribution of the gravity term (implicit treatment)
           const auto& rho_s = phi_rho.back().get_value(q);
           gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Fr2*rho_s*e_k);
 
-          phi.submit_value(rho_old*u_old - gravity_term, q);
+          // Add last contribution of the rotation term. For the R1 formulation, the current velocity
+          // is taken from the fixed point loop
+          if(rotation == Rotation::Formulation::R1) {
+            rotation_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                             Rotation::coriolis_term(rho_s, phi_u_fixed.get_value(q) - phi_u_bar.get_value(q), inv_Ro);
+          }
+
+          phi.submit_value(rho_old*u_old - gravity_term - rotation_term, q);
           phi.submit_gradient(VerticalSlice::to_mesh_space<dim>(flux), q);
         }
 
@@ -1072,6 +1181,7 @@ namespace Atmospheric_Flow {
       std::vector<FEEvaluation_u>    phi_u(IMEX_stage - 1, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
       std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
       std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage - 1, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+      FEEvaluation_u                 phi_u_bar(data, EquationData::U_INDEX_DOF);
 
       // Loop over all cells
       for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
@@ -1082,6 +1192,12 @@ namespace Atmospheric_Flow {
           phi_u[s - 1].gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
           phi_pres[s - 1].reinit(cell);
           phi_pres[s - 1].gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+        }
+
+        // Read the background velocity (only in presence of rotation)
+        if(rotation != Rotation::Formulation::none) {
+          phi_u_bar.reinit(cell);
+          phi_u_bar.gather_evaluate(u_bar, EvaluationFlags::values);
         }
 
         phi.reinit(cell);
@@ -1096,6 +1212,7 @@ namespace Atmospheric_Flow {
           // Compute the quantities at the previous stages
           Tensor<2, EquationData::n_comp_u, VectorizedArray<Number>> flux;
           Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> gravity_term;
+          Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> rotation_term;
           for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
             const auto& u_s = phi_u[s - 1].get_value(q);
 
@@ -1107,9 +1224,14 @@ namespace Atmospheric_Flow {
                     b_tilde[s - 1]*dt*(inv_Ma2*p_s_times_identity);
 
             gravity_term += b_tilde[s - 1]*dt*(inv_Fr2*rho_s*e_k);
+
+            if(rotation != Rotation::Formulation::none) {
+              rotation_term += b_tilde[s - 1]*dt*
+                               Rotation::coriolis_term(rho_s, u_s - phi_u_bar.get_value(q), inv_Ro);
+            }
           }
 
-          phi.submit_value(rho_old*u_old - gravity_term, q);
+          phi.submit_value(rho_old*u_old - gravity_term - rotation_term, q);
           phi.submit_gradient(VerticalSlice::to_mesh_space<dim>(flux), q);
         }
 
@@ -1366,6 +1488,13 @@ namespace Atmospheric_Flow {
                      n_q_points_1d, n_q_points_1d_boundary,
                      Vec>::
   vmult_rhs_momentum(Vec& dst, const std::vector<Vec>& src) const {
+    // In presence of rotation, the background velocity has to be set. Moreover, for the R1 formulation,
+    // the current velocity of the fixed point loop has to be passed for the intermediate stages
+    AssertThrow(rotation == Rotation::Formulation::none || u_bar.size() > 0,
+                ExcMessage("Background velocity not set. Call 'set_background_velocity' first."));
+    Assert(!(rotation == Rotation::Formulation::R1 && IMEX_stage <= n_stages) || src.size() == 3*IMEX_stage - 1,
+           ExcMessage("The R1 formulation requires also the current velocity of the fixed point loop."));
+
     for(unsigned d = 0; d < src.size(); ++d) {
       src[d].update_ghost_values();
     }

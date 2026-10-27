@@ -592,8 +592,12 @@ void EulerSolver<dim>::setup_dofs() {
         << "Ma        = " << Ma
         << std::endl
         << "Fr        = " << euler_matrix.get_Froude()
-        << std::endl
         << std::endl;
+  if(euler_matrix.get_rotation_formulation() != Rotation::Formulation::none) {
+    pcout << "Ro        = " << euler_matrix.get_Rossby()
+          << std::endl;
+  }
+  pcout << std::endl;
 
   // Set additional data to check which variables neeed to be updated
   typename MatrixFree<dim, Number>::AdditionalData additional_data;
@@ -765,6 +769,9 @@ void EulerSolver<dim>::setup_dofs() {
   VectorTools::interpolate(mapping, dof_handler_pressure, *(tc->ic.pressure), pres_bar);
   VectorTools::interpolate(mapping, dof_handler_density, *(tc->ic.density), rho_bar);
 
+  // The Coriolis force acts on the velocity relative to the background velocity
+  euler_matrix.set_background_velocity(u_bar);
+
   // Compute damping layer vectors (if meaningful)
   if(tc->has_mountain_data) {
     dt_tau_u->scale(u_bar);
@@ -860,7 +867,8 @@ void EulerSolver<dim>::update_density() {
 // @sect{<code>EulerSolver::pressure_fixed_point</code>}
 
 // Auxiliary routine to compute the rhs of the pressure equation
-// (contribution that does not change during the fixed point loop)
+// (contribution that does not change during the fixed point loop, except
+// for the R1 formulation of the rotation term, see perform_fixed_point_loop)
 //
 template<unsigned dim>
 void EulerSolver<dim>::precompute_rhs_pressure() {
@@ -877,6 +885,9 @@ void EulerSolver<dim>::precompute_rhs_pressure() {
     vectors_rhs_momentum_equation.push_back(pres_s[idx_s]);
   }
   vectors_rhs_momentum_equation.push_back(rho_s[IMEX_stage - 1]);
+  if(euler_matrix.get_rotation_formulation() == Rotation::Formulation::R1) {
+    vectors_rhs_momentum_equation.push_back(u_fixed);
+  }
 
   euler_matrix.vmult_rhs_momentum(rhs_momentum, vectors_rhs_momentum_equation);
 
@@ -931,12 +942,20 @@ void EulerSolver<dim>::pressure_fixed_point() {
 //
 template<unsigned dim>
 unsigned EulerSolver<dim>::perform_fixed_point_loop() {
-  // Compute the contribution to the rhs that never changes
-  precompute_rhs_pressure();
+  // Compute the contribution to the rhs that never changes. For the R1 formulation of the rotation term,
+  // this contribution depends on the current velocity and, therefore, it is recomputed at each iteration
+  const bool rhs_momentum_changes = (euler_matrix.get_rotation_formulation() == Rotation::Formulation::R1);
+  if(!rhs_momentum_changes) {
+    precompute_rhs_pressure();
+  }
 
   // Perform the fixed point loop
   unsigned iter;
   for(iter = 0; iter < 100; ++iter) {
+    if(rhs_momentum_changes) {
+      precompute_rhs_pressure();
+    }
+
     dpres_fixed.equ(static_cast<Number>(1.0), pres_fixed),
     pressure_fixed_point();
     update_velocity();

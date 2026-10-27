@@ -82,6 +82,10 @@ namespace RunTimeParameters {
     double Mach;   /*!< The Mach number */
     double Froude; /*!< The Froude number */
 
+    // Rotational effects (Coriolis force on an f-plane, see include/physics/rotation.h)
+    double      Rossby;               /*!< The Rossby number */
+    std::string rotation_formulation; /*!< Formulation of the rotation term ('none' for no rotation) */
+
     double L_ref;   /*!< Reference length */
     double u_ref;   /*!< Reference velocity */
     double p_ref;   /*!< Reference pressure */
@@ -208,6 +212,15 @@ namespace RunTimeParameters {
                         "0.319275428407050",
                         Patterns::Double(0.0),
                         "The Froude number.");
+      prm.declare_entry("Rossby",
+                        "100.0",
+                        Patterns::Double(0.0),
+                        "The Rossby number (used only in presence of rotation).");
+      prm.declare_entry("rotation_formulation",
+                        "none",
+                        Patterns::Selection("none|R1"),
+                        "Formulation of the rotation term: 'none' (no rotation) or 'R1' "
+                        "(see https://arxiv.org/abs/2605.29598).");
 
       prm.declare_entry("L_ref",
                         "1.0",
@@ -437,6 +450,9 @@ namespace RunTimeParameters {
 
       Mach   = prm.get_double("Mach");
       Froude = prm.get_double("Froude");
+
+      Rossby               = prm.get_double("Rossby");
+      rotation_formulation = prm.get("rotation_formulation");
 
       L_ref   = prm.get_double("L_ref");
       u_ref   = prm.get_double("u_ref");
