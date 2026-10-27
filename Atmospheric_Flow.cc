@@ -318,6 +318,9 @@ private:
   Number gamma;  /*!< gamma (i.e. Cp/Cv) */
   Number Gamma;  /*!< (gamma - 1)/gamma */
 
+  Number p_ref;   /*!< Reference pressure for post-processing */
+  Number rho_ref; /*!< Reference density for post-processing */
+
   Number h_min; /*!< Minimum cell diameter */
 
   // Auxiliary routines to numerically solve the problem
@@ -397,7 +400,9 @@ EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
   rtol_fixed_point(static_cast<Number>(data.rtol_fixed_point)),
   Ma(euler_matrix.get_Mach()), inv_Ma(static_cast<Number>(1.0)/Ma),
   gamma(EquationData::Cp_Cv),
-  Gamma((gamma - static_cast<Number>(1.0))/gamma)
+  Gamma((gamma - static_cast<Number>(1.0))/gamma),
+  p_ref(static_cast<Number>(data.p_ref)),
+  rho_ref(static_cast<Number>(data.rho_ref))
   {
     // Check the created test case
     pcout << "Selected test case: " << data.tc_name << std::endl;
@@ -1094,14 +1099,17 @@ void EulerSolver<dim>::output_results(const unsigned step) {
   pres_s.front().update_ghost_values();
   data_out.add_data_vector(dof_handler_pressure, pres_s.front(), "p", {DataComponentInterpretation::component_is_scalar});
 
+  // Compute the potential temperature (in Kelvin). Pressure and density are first expressed in physical units
+  // through the reference quantities, so that the formula is valid both for dimensional and non-dimensional simulations
   for(const auto& cell: dof_handler_pressure.active_cell_iterators()) {
     if(cell->is_locally_owned()) {
       std::vector<types::global_dof_index> dof_indices(fe_pressure.dofs_per_cell);
       cell->get_dof_indices(dof_indices);
       for(unsigned idx = 0; idx < dof_indices.size(); ++idx) {
-        const auto pres = pres_s.front()(dof_indices[idx]);
-        const auto T    = pres/rho_s.front()(dof_indices[idx]);
-        const auto Pi   = std::pow(pres, Gamma);
+        const auto pres = p_ref*pres_s.front()(dof_indices[idx]);
+        const auto rho  = rho_ref*rho_s.front()(dof_indices[idx]);
+        const auto T    = pres/(static_cast<Number>(EquationData::R)*rho);
+        const auto Pi   = std::pow(pres/static_cast<Number>(EquationData::p0), Gamma);
         theta_old(dof_indices[idx]) = T/Pi;
       }
     }
