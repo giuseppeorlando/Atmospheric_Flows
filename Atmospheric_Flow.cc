@@ -231,28 +231,28 @@ protected:
   // tc->has_mountain_data is true)
   std::optional<RayleighDamping::Rayleigh<dim, 1, Number>>       dt_tau;
   std::optional<RayleighDamping::Rayleigh_Aux<dim, 1, Number>>   dt_tau_aux;
-  std::optional<RayleighDamping::Rayleigh<dim, dim, Number>>     dt_tau_vel;
-  std::optional<RayleighDamping::Rayleigh_Aux<dim, dim, Number>> dt_tau_vel_aux;
+  std::optional<RayleighDamping::Rayleigh<dim, EquationData::n_comp_u, Number>>     dt_tau_vel;
+  std::optional<RayleighDamping::Rayleigh_Aux<dim, EquationData::n_comp_u, Number>> dt_tau_vel_aux;
 
   std::optional<RayleighDamping::Rayleigh_Right<dim, 1, Number>>       dt_tau_right;
   std::optional<RayleighDamping::Rayleigh_Aux_Right<dim, 1, Number>>   dt_tau_aux_right;
-  std::optional<RayleighDamping::Rayleigh_Right<dim, dim, Number>>     dt_tau_vel_right;
-  std::optional<RayleighDamping::Rayleigh_Aux_Right<dim, dim, Number>> dt_tau_vel_aux_right;
+  std::optional<RayleighDamping::Rayleigh_Right<dim, EquationData::n_comp_u, Number>>     dt_tau_vel_right;
+  std::optional<RayleighDamping::Rayleigh_Aux_Right<dim, EquationData::n_comp_u, Number>> dt_tau_vel_aux_right;
 
   std::optional<RayleighDamping::Rayleigh_Left<dim, 1, Number>>       dt_tau_left;
   std::optional<RayleighDamping::Rayleigh_Aux_Left<dim, 1, Number>>   dt_tau_aux_left;
-  std::optional<RayleighDamping::Rayleigh_Left<dim, dim, Number>>     dt_tau_vel_left;
-  std::optional<RayleighDamping::Rayleigh_Aux_Left<dim, dim, Number>> dt_tau_vel_aux_left;
+  std::optional<RayleighDamping::Rayleigh_Left<dim, EquationData::n_comp_u, Number>>     dt_tau_vel_left;
+  std::optional<RayleighDamping::Rayleigh_Aux_Left<dim, EquationData::n_comp_u, Number>> dt_tau_vel_aux_left;
 
   std::optional<RayleighDamping::Rayleigh_RightY<dim, 1, Number>>       dt_tau_right_y;
   std::optional<RayleighDamping::Rayleigh_Aux_RightY<dim, 1, Number>>   dt_tau_aux_right_y;
-  std::optional<RayleighDamping::Rayleigh_RightY<dim, dim, Number>>     dt_tau_vel_right_y;
-  std::optional<RayleighDamping::Rayleigh_Aux_RightY<dim, dim, Number>> dt_tau_vel_aux_right_y;
+  std::optional<RayleighDamping::Rayleigh_RightY<dim, EquationData::n_comp_u, Number>>     dt_tau_vel_right_y;
+  std::optional<RayleighDamping::Rayleigh_Aux_RightY<dim, EquationData::n_comp_u, Number>> dt_tau_vel_aux_right_y;
 
   std::optional<RayleighDamping::Rayleigh_LeftY<dim, 1, Number>>       dt_tau_left_y;
   std::optional<RayleighDamping::Rayleigh_Aux_LeftY<dim, 1, Number>>   dt_tau_aux_left_y;
-  std::optional<RayleighDamping::Rayleigh_LeftY<dim, dim, Number>>     dt_tau_vel_left_y;
-  std::optional<RayleighDamping::Rayleigh_Aux_LeftY<dim, dim, Number>> dt_tau_vel_aux_left_y;
+  std::optional<RayleighDamping::Rayleigh_LeftY<dim, EquationData::n_comp_u, Number>>     dt_tau_vel_left_y;
+  std::optional<RayleighDamping::Rayleigh_Aux_LeftY<dim, EquationData::n_comp_u, Number>> dt_tau_vel_aux_left_y;
 
   // Now we declare a bunch of variables for output
   fs::path saving_dir; /*!< Auxiliary variable for the directory to save the results */
@@ -365,7 +365,7 @@ EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
                 parallel::distributed::Triangulation<dim>::limit_level_difference_at_vertices,
                 parallel::distributed::Triangulation<dim>::construct_multigrid_hierarchy),
   fe_density(FE_DGQ<dim>(EquationData::degree_rho), 1),
-  fe_velocity(FE_DGQ<dim>(EquationData::degree_u), dim),
+  fe_velocity(FE_DGQ<dim>(EquationData::degree_u), EquationData::n_comp_u),
   fe_pressure(FE_DGQ<dim>(EquationData::degree_p), 1),
   dof_handler_density(triangulation),
   dof_handler_velocity(triangulation),
@@ -513,26 +513,35 @@ template<unsigned dim>
 void EulerSolver<dim>::create_triangulation(const RunTimeParameters::Data_Storage& data) {
   TimerOutput::Scope t(time_table, "Create triangulation");
 
+  // The last direction is always the vertical one. In two dimensions, the domain
+  // is a vertical slice in the x-z plane (see include/physics/vertical_slice.h)
   Point<dim, Number> lower_left;
-  lower_left[0] = static_cast<Number>(data.x_min);
-  lower_left[1] = static_cast<Number>(data.y_min);
-  lower_left[2] = static_cast<Number>(data.z_min);
   Point<dim, Number> upper_right;
+  std::vector<unsigned> n_elements;
+  lower_left[0]  = static_cast<Number>(data.x_min);
   upper_right[0] = static_cast<Number>(data.x_max)/
                    static_cast<Number>(data.L_ref);
-  upper_right[1] = static_cast<Number>(data.y_max)/
-                   static_cast<Number>(data.L_ref);
-  upper_right[2] = static_cast<Number>(data.z_max)/
-                   static_cast<Number>(data.L_ref);
+  n_elements.push_back(data.n_elements_x);
+  if constexpr(dim == 3) {
+    lower_left[1]  = static_cast<Number>(data.y_min);
+    upper_right[1] = static_cast<Number>(data.y_max)/
+                     static_cast<Number>(data.L_ref);
+    n_elements.push_back(data.n_elements_y);
+  }
+  lower_left[dim - 1]  = static_cast<Number>(data.z_min);
+  upper_right[dim - 1] = static_cast<Number>(data.z_max)/
+                         static_cast<Number>(data.L_ref);
+  n_elements.push_back(data.n_elements_z);
 
-  GridGenerator::subdivided_hyper_rectangle(triangulation,
-                                            {data.n_elements_x, data.n_elements_y, data.n_elements_z},
+  GridGenerator::subdivided_hyper_rectangle(triangulation, n_elements,
                                             lower_left, upper_right, true);
 
-  // Consider periodic conditions along the horizontal direction
+  // Consider periodic conditions along the horizontal directions
   std::vector<GridTools::PeriodicFacePair<typename parallel::distributed::Triangulation<dim>::cell_iterator>> periodic_faces;
   GridTools::collect_periodic_faces(triangulation, 0, 1, 0, periodic_faces);
-  GridTools::collect_periodic_faces(triangulation, 2, 3, 1, periodic_faces);
+  if constexpr(dim == 3) {
+    GridTools::collect_periodic_faces(triangulation, 2, 3, 1, periodic_faces);
+  }
   triangulation.add_periodicity(periodic_faces);
 
   // Build the proper triangulation
@@ -1034,9 +1043,16 @@ void EulerSolver<dim>::output_results(const unsigned step) {
 
   rho_s.front().update_ghost_values();
   data_out.add_data_vector(dof_handler_density, rho_s.front(), "rho", {DataComponentInterpretation::component_is_scalar});
-  std::vector<std::string> velocity_names(dim, "u");
+  // In three dimensions, the velocity is saved as a vector field, whereas for a vertical slice
+  // the components are saved separately (see include/physics/vertical_slice.h)
+  std::vector<std::string> velocity_names(EquationData::n_comp_u, "u");
   std::vector<DataComponentInterpretation::DataComponentInterpretation>
-  component_interpretation_velocity(dim, DataComponentInterpretation::component_is_part_of_vector);
+  component_interpretation_velocity(EquationData::n_comp_u, DataComponentInterpretation::component_is_part_of_vector);
+  if constexpr(dim != EquationData::n_comp_u) {
+    velocity_names = {"u", "v", "w"};
+    std::fill(component_interpretation_velocity.begin(), component_interpretation_velocity.end(),
+              DataComponentInterpretation::component_is_scalar);
+  }
   u_s.front().update_ghost_values();
   data_out.add_data_vector(dof_handler_velocity, u_s.front(), velocity_names, component_interpretation_velocity);
   pres_s.front().update_ghost_values();
@@ -1061,7 +1077,9 @@ void EulerSolver<dim>::output_results(const unsigned step) {
   rho_bar.update_ghost_values();
   data_out.add_data_vector(dof_handler_density, rho_bar, "rho_bar", {DataComponentInterpretation::component_is_scalar});
   u_bar.update_ghost_values();
-  std::fill(velocity_names.begin(), velocity_names.end(), "u_bar");
+  for(auto& name: velocity_names) {
+    name += "_bar";
+  }
   data_out.add_data_vector(dof_handler_velocity, u_bar, velocity_names, component_interpretation_velocity);
   pres_bar.update_ghost_values();
   data_out.add_data_vector(dof_handler_pressure, pres_bar, "p_bar", {DataComponentInterpretation::component_is_scalar});
@@ -1124,7 +1142,7 @@ template<unsigned dim>
 typename EulerSolver<dim>::Number EulerSolver<dim>::get_max_velocity() const {
   const unsigned n_q_points = quadrature_velocity.size();
   FEValues<dim> fe_values_velocity(mapping, fe_velocity, quadrature_velocity, update_values);
-  std::vector<Vector<Number>> velocity_values(n_q_points, Vector<Number>(dim));
+  std::vector<Vector<Number>> velocity_values(n_q_points, Vector<Number>(EquationData::n_comp_u));
 
   auto max_local_velocity = static_cast<Number>(0.0);
 
@@ -1211,7 +1229,7 @@ std::array<typename EulerSolver<dim>::Number, dim>
 EulerSolver<dim>::compute_max_Cu_per_direction() const {
   const unsigned n_q_points = quadrature_velocity.size();
   FEValues<dim> fe_values(mapping, fe_velocity, quadrature_velocity, update_values);
-  std::vector<Vector<Number>> solution_values_velocity(n_q_points, Vector<Number>(dim));
+  std::vector<Vector<Number>> solution_values_velocity(n_q_points, Vector<Number>(EquationData::n_comp_u));
 
   std::array<Number, dim> res;
   std::fill(res.begin(), res.end(), std::numeric_limits<Number>::min());
@@ -1226,7 +1244,7 @@ EulerSolver<dim>::compute_max_Cu_per_direction() const {
         for(unsigned d = 0; d < dim; ++d) {
           res[d] = std::max(res[d],
                             EquationData::degree_u*
-                            (std::abs(solution_values_velocity[q](d))*dt/
+                            (std::abs(solution_values_velocity[q](VerticalSlice::velocity_component<dim>(d)))*dt/
                              static_cast<Number>(cell->extent_in_direction(d))));
         }
       }
@@ -1299,6 +1317,13 @@ void EulerSolver<dim>::run(const bool verbose,
                            const std::string& n_files_,
                            const std::string& dt_save_) {
   ConditionalOStream verbose_cout(std::cout, verbose && Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+
+  // Names of the directions of the mesh for the output of the Courant numbers
+  // (in two dimensions, the domain is a vertical slice in the x-z plane)
+  std::vector<std::string> direction_names = {"x", "y", "z"};
+  if constexpr(dim == 2) {
+    direction_names = {"x", "z"};
+  }
 
   // Initialize and save initial state
   auto time  = t0;
@@ -1442,17 +1467,17 @@ void EulerSolver<dim>::run(const bool verbose,
     const auto max_celerity = inv_Ma*compute_max_celerity();
     pcout<< "Maximum celerity = " << max_celerity << std::endl;
     pcout << "CFL_c = " << EquationData::degree_u*(max_celerity*dt/h_min) << std::endl;
-    const auto max_C_x_y_z = compute_max_C_per_direction();
-    pcout << "CFL_c_x = " << max_C_x_y_z[0] << std::endl;
-    pcout << "CFL_c_y = " << max_C_x_y_z[1] << std::endl;
-    pcout << "CFL_c_z = " << max_C_x_y_z[2] << std::endl;
+    const auto max_C_per_direction = compute_max_C_per_direction();
+    for(unsigned d = 0; d < dim; ++d) {
+      pcout << "CFL_c_" << direction_names[d] << " = " << max_C_per_direction[d] << std::endl;
+    }
     const auto max_velocity = get_max_velocity();
     pcout<< "Maximum velocity = " << max_velocity << std::endl;
     pcout << "CFL_u = " << EquationData::degree_u*(max_velocity*dt/h_min) << std::endl;
-    const auto max_Cu_x_y_z = compute_max_Cu_per_direction();
-    pcout << "CFL_u_x = " << max_Cu_x_y_z[0] << std::endl;
-    pcout << "CFL_u_y = " << max_Cu_x_y_z[1] << std::endl;
-    pcout << "CFL_u_z = " << max_Cu_x_y_z[2] << std::endl;
+    const auto max_Cu_per_direction = compute_max_Cu_per_direction();
+    for(unsigned d = 0; d < dim; ++d) {
+      pcout << "CFL_u_" << direction_names[d] << " = " << max_Cu_per_direction[d] << std::endl;
+    }
 
     // Recompute time step if needed
     if(dt_from_CFL) {
@@ -1581,10 +1606,14 @@ int main(int argc, char *argv[]) {
     const auto& curr_rank = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
     deallog.depth_console(data.verbose && curr_rank == 0 ? 2 : 0);
 
+    // Dimension of the problem (fixed at compile time). Two-dimensional configurations
+    // are interpreted as vertical slices in the x-z plane (see include/physics/vertical_slice.h)
+    constexpr unsigned dim = 3;
+
     // Initilize Butcher tableaux. The declaration of the coefficients (hard-coded for the moment)
     // is totally relegated here, so this is the only place where we need to modify (much cleaner)
     const unsigned n_stages = 3;
-    using Number = typename EulerSolver<3>::Number;
+    using Number = typename EulerSolver<dim>::Number;
 
     std::vector<std::vector<Number>> a(n_stages, std::vector<Number>(n_stages));
     std::vector<Number> b(n_stages);
@@ -1611,7 +1640,7 @@ int main(int argc, char *argv[]) {
     TimeStepping::RungeKutta<Number> implicit_RK(a_tilde, b_tilde);
 
     // Run the simulation
-    EulerSolver<3> test(data, explicit_RK, implicit_RK);
+    EulerSolver<dim> test(data, explicit_RK, implicit_RK);
     test.run(data.verbose, data.output_interval, data.n_files, data.dt_save);
 
     if(curr_rank == 0) {
