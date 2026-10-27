@@ -1,5 +1,5 @@
 # Three-dimensional test case. Run from the root of the repository, e.g.
-#   mpirun -np <n> ./build/Atmospheric_Flow -p examples/Mountain_3D_largerdomain/parameter-file.prm
+#   mpirun -np <n> ./Atmospheric_Flow -p examples/Mountain_3D_largerdomain/parameter-file.prm
 
 # NOTE: in the branch rotation this configuration was run with the initial conditions
 # of the non-hydrostatic mountain (constant buoyancy frequency N = 0.02). Here the isothermal

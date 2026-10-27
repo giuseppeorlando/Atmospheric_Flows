@@ -1,5 +1,5 @@
 # Three-dimensional test case. Run from the root of the repository, e.g.
-#   mpirun -np <n> ./build/Atmospheric_Flow -p examples/Mountain_3D_smalldomain/parameter-file.prm
+#   mpirun -np <n> ./Atmospheric_Flow -p examples/Mountain_3D_smalldomain/parameter-file.prm
 
 subsection Test case
   # In this subsection we specify the test case

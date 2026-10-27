@@ -1,7 +1,7 @@
 # Two-dimensional test case (vertical slice in the x-z plane):
 # set 'constexpr unsigned dim = 2' in main() of Atmospheric_Flow.cc and recompile.
 # Run from the root of the repository, e.g.
-#   mpirun -np <n> ./build/Atmospheric_Flow -p examples/IGW_planetary_scale/parameter-file.prm
+#   mpirun -np <n> ./Atmospheric_Flow -p examples/IGW_planetary_scale/parameter-file.prm
 
 subsection Test case
   # In this subsection we specify the test case
