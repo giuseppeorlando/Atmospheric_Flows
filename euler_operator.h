@@ -1,18 +1,20 @@
-/* Author: Giuseppe Orlando, 2023. */
+/* Author: Giuseppe Orlando, 2026. */
+#pragma once
 
 // @sect{Include files}
 
-// We start by including all the necessary deal.II header files and some C++
-// related ones.
+// We start by including all the necessary deal.II header files
 //
-#include <deal.II/matrix_free/matrix_free.h>
 #include <deal.II/matrix_free/operators.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 
 #include <deal.II/meshworker/mesh_loop.h>
 
-#include "runtime_parameters.h"
-#include "equation_data.h"
+/*--- Include headers related to the problem of interest ---*/
+#include "include/io/runtime_parameters.h"
+#include "include/equation_data.h"
+#include "include/space_discretization/numerical_flux/Rusanov_flux.h"
+#include "include/time_integrator/runge_kutta.h"
 
 // This is the class that implements the discretization
 //
@@ -21,26 +23,39 @@ namespace Atmospheric_Flow {
 
   // @sect{ <code>EULEROperator::EULEROperator</code> }
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
   class EULEROperator: public MatrixFreeOperators::Base<dim, Vec> {
   public:
     using Number = typename Vec::value_type;
 
     EULEROperator(); /*--- Default constructor ---*/
 
-    EULEROperator(RunTimeParameters::Data_Storage& data); /*--- Constructor with some input related data ---*/
+    EULEROperator(const RunTimeParameters::Data_Storage& data,
+                  const TimeStepping::RungeKutta<Number>& explicit_RK,
+                  const TimeStepping::RungeKutta<Number>& implicit_RK); /*--- Constructor with some input related data ---*/
 
-    void set_dt(const double time_step); /*--- Setter of the time-step. This is useful both for multigrid purposes and also
-                                               in case of modifications of the time step. ---*/
+    template<typename T>
+    inline DEAL_II_ALWAYS_INLINE
+    void set_dt(const T time_step); /*--- Setter of the time-step. This is useful both for multigrid purposes and also
+                                          in case of modifications of the time step. ---*/
 
-    void set_Mach(const double Ma_); /*--- Setter of the Mach number. This is useful for multigrid purpose. ---*/
+    inline DEAL_II_ALWAYS_INLINE
+    Number get_Mach() const; /*--- Getter of the Mach number. This is useful for debugging purpose. ---*/
 
-    void set_Froude(const double Fr_); /*--- Setter of the Froude number. This is useful for multigrid purpose. ---*/
+    inline DEAL_II_ALWAYS_INLINE
+    Number get_Froude() const; /*--- Getter of the Froude number. This is useful for debugging purpose. ---*/
 
-    void set_HYPERBOLIC_stage(const unsigned int stage); /*--- Setter of the IMEX stage. ---*/
+    inline DEAL_II_ALWAYS_INLINE
+    void set_IMEX_stage(const unsigned stage); /*--- Setter of the IMEX stage. ---*/
 
-    void set_NS_stage(const unsigned int stage); /*--- Setter of the equation currently under solution. ---*/
+    inline DEAL_II_ALWAYS_INLINE
+    void set_Euler_stage(const unsigned stage); /*--- Setter of the equation currently under solution. ---*/
+
+    inline DEAL_II_ALWAYS_INLINE
+    unsigned get_Euler_stage() const; /*--- Getter of the equation currently under solution. ---*/
 
     void set_rho_for_fixed(const Vec& src); /*--- Setter of the current density. This is for the assembling of the bilinear forms
                                                   where only one source vector can be passed in input. ---*/
@@ -48,17 +63,14 @@ namespace Atmospheric_Flow {
     void set_pres_fixed(const Vec& src); /*--- Setter of the current pressure. This is for the assembling of the bilinear forms
                                                where only one source vector can be passed in input. ---*/
 
-    void set_u_fixed(const Vec& src); /*--- Setter of the current velocity. This is for the assembling of the bilinear forms
-                                            where only one source vector can be passed in input. ---*/
+    void vmult_rhs_density(Vec& dst, const std::vector<Vec>& src) const; /*--- Auxiliary function to assemble the rhs
+                                                                               of the continuity equation. ---*/
 
-    void vmult_rhs_rho_update(Vec& dst, const std::vector<Vec>& src) const; /*--- Auxiliary function to assemble the rhs
-                                                                                  for the density. ---*/
+    void vmult_rhs_momentum(Vec& dst, const std::vector<Vec>& src) const;  /*--- Auxiliary function to assemble the rhs
+                                                                                 of the momentum equation. ---*/
 
-    void vmult_rhs_pressure(Vec& dst, const std::vector<Vec>& src) const;  /*--- Auxiliary function to assemble the rhs
-                                                                                 for the pressure. ---*/
-
-    void vmult_rhs_velocity_fixed(Vec& dst, const std::vector<Vec>& src) const;  /*--- Auxiliary function to assemble the rhs
-                                                                                       for the velocity. ---*/
+    void vmult_rhs_energy(Vec& dst, const std::vector<Vec>& src) const;  /*--- Auxiliary function to assemble the rhs
+                                                                               of the energy equation. ---*/
 
     void vmult_pressure(Vec& dst, const Vec& src) const; /*--- Action of matrix 'B'. ---*/
 
@@ -67,1340 +79,1245 @@ namespace Atmospheric_Flow {
     virtual void compute_diagonal() override; /*--- Overriden function to compute the diagonal. ---*/
 
   protected:
-    double       Ma;  /*--- Mach number. ---*/
-    double       Fr;  /*--- Froude number. ---*/
-    double       dt;  /*--- Time step. ---*/
+    /*--- Define typedef for sake of readability and convenience ----*/
+    using FEEvaluation_rho  = FEEvaluation<dim, fe_degree_rho, n_q_points_1d, 1, Number>;
+    using FEEvaluation_u    = FEEvaluation<dim, fe_degree_u, n_q_points_1d, dim, Number>;
+    using FEEvaluation_pres = FEEvaluation<dim, fe_degree_p, n_q_points_1d, 1, Number>;
 
-    double       gamma; /*--- TR-BDF2 (i.e. implicit part) parameter. ---*/
+    using FEFaceEvaluation_rho  = FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d, 1, Number>;
+    using FEFaceEvaluation_u    = FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d, dim, Number>;
+    using FEFaceEvaluation_pres = FEFaceEvaluation<dim, fe_degree_p, n_q_points_1d, 1, Number>;
+
+    using FEFaceEvaluation_rho_boundary  = FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_boundary, 1, Number>;
+    using FEFaceEvaluation_u_boundary    = FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_boundary, dim, Number>;
+    using FEFaceEvaluation_pres_boundary = FEFaceEvaluation<dim, fe_degree_p, n_q_points_1d_boundary, 1, Number>;
+
+    Number Ma; /*--- Mach number. ---*/
+    Number Fr; /*--- Froude number. ---*/
+
+    Number dt; /*--- Time step. ---*/
+
     /*--- The following variables follow the classical Butcher tableaux notation ---*/
-    double       a21;
-    double       a22;
-    double       a31;
-    double       a32;
-    double       a33;
-    double       a21_tilde;
-    double       a22_tilde;
-    double       a31_tilde;
-    double       a32_tilde;
-    double       a33_tilde;
-    double       b1;
-    double       b2;
-    double       b3;
+    std::vector<std::vector<Number>> a;
+    std::vector<std::vector<Number>> a_tilde;
 
-    unsigned int HYPERBOLIC_stage; /*--- Flag for the IMEX stage ---*/
-    mutable unsigned int NS_stage; /*--- Flag for the IMEX stage ---*/
+    std::vector<Number> b;
+    std::vector<Number> b_tilde;
+
+    unsigned n_stages; /*--- Number of stages ---*/
+
+    unsigned IMEX_stage;          /*--- Flag for the IMEX stage ---*/
+    mutable unsigned Euler_stage; /*--- Flag for the equation actually considered ---*/
 
     virtual void apply_add(Vec& dst, const Vec& src) const override; /*--- Overriden function which actually assembles the
                                                                            bilinear forms ---*/
 
   private:
     Vec rho_for_fixed,
-        pres_fixed,
-        u_fixed;
+        pres_fixed; /*--- Auxiliary vectors for fixed point loop ---*/
+
+    /*--- Auxiliary function for the numerical flux ---*/
+    NumericalFlux::RusanovFluxEuler<dim, VectorizedArray<Number>> num_flux;
+
+    Number Ma2;          /*--- Squared Mach number ---*/
+    Number inv_Ma2;      /*--- Inverse of squared Mach number ---*/
+    Number inv_Fr2;      /*--- Inverse of squared Froude number ---*/
+    Number Ma2_ov_Fr2;   /*--- Mach squared over Froude squared ---*/
+    Number gamma_m1;     /*--- gamma - 1 (gamma ratio specific heats) ---*/
+    Number inv_gamma_m1; /*--- Inverse gamma - 1 ---*/
+    Number inv_Gamma;    /*--- gamma/(gamma - 1) ---*/
+
+    Tensor<1, dim, VectorizedArray<Number>> e_k; /*--- Unit normal vector along vertical direction ---*/
+    Tensor<2, dim, VectorizedArray<Number>> identity; /*--- Identity tensor ---*/
+    Tensor<1, dim, VectorizedArray<Number>> tmp_diagonal_velocity; /*--- Auxiliary vector to compute the diagonal of the velocity matrix ----*/
 
     /*--- Assembler functions for the rhs related to the continuity equation. Here, and also in the following,
           we distinguish between the contribution for cells, faces and boundary. ---*/
-    void assemble_rhs_cell_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                           Vec&                                         dst,
-                                           const std::vector<Vec>&                      src,
-                                           const std::pair<unsigned int, unsigned int>& cell_range) const;
-    void assemble_rhs_face_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                           Vec&                                         dst,
-                                           const std::vector<Vec>&                      src,
-                                           const std::pair<unsigned int, unsigned int>& face_range) const;
-    void assemble_rhs_boundary_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                               Vec&                                         dst,
-                                               const std::vector<Vec>&                      src,
-                                               const std::pair<unsigned int, unsigned int>& face_range) const {}
+    void assemble_rhs_cell_term_density(const MatrixFree<dim, Number>&       data,
+                                        Vec&                                 dst,
+                                        const std::vector<Vec>&              src,
+                                        const std::pair<unsigned, unsigned>& cell_range) const;
+    void assemble_rhs_face_term_density(const MatrixFree<dim, Number>&       data,
+                                        Vec&                                 dst,
+                                        const std::vector<Vec>&              src,
+                                        const std::pair<unsigned, unsigned>& face_range) const;
+    void assemble_rhs_boundary_term_density(const MatrixFree<dim, Number>&       data,
+                                            Vec&                                 dst,
+                                            const std::vector<Vec>&              src,
+                                            const std::pair<unsigned, unsigned>& face_range) const {}
                                                /*-- No flux, so no contribution from this function ---*/
 
     /*--- Assembler function related to the bilinear form of the continuity equation. Only cell contribution is present,
           since, basically, we end up with a mass matrix. ---*/
-    void assemble_cell_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                       Vec&                                         dst,
-                                       const Vec&                                   src,
-                                       const std::pair<unsigned int, unsigned int>& cell_range) const;
+    void assemble_cell_term_density(const MatrixFree<dim, Number>&       data,
+                                    Vec&                                 dst,
+                                    const Vec&                           src,
+                                    const std::pair<unsigned, unsigned>& cell_range) const;
 
-    /*--- Assembler functions for the rhs related to the velocity equation. ---*/
-    void assemble_rhs_cell_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                               Vec&                                         dst,
-                                               const std::vector<Vec>&                      src,
-                                               const std::pair<unsigned int, unsigned int>& cell_range) const;
-    void assemble_rhs_face_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                               Vec&                                         dst,
-                                               const std::vector<Vec>&                      src,
-                                               const std::pair<unsigned int, unsigned int>& face_range) const;
-    void assemble_rhs_boundary_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                                   Vec&                                         dst,
-                                                   const std::vector<Vec>&                      src,
-                                                   const std::pair<unsigned int, unsigned int>& face_range) const;
+    /*--- Assembler functions for the rhs related to the momentum equation. ---*/
+    void assemble_rhs_cell_term_momentum(const MatrixFree<dim, Number>&       data,
+                                         Vec&                                 dst,
+                                         const std::vector<Vec>&              src,
+                                         const std::pair<unsigned, unsigned>& cell_range) const;
+    void assemble_rhs_face_term_momentum(const MatrixFree<dim, Number>&       data,
+                                         Vec&                                 dst,
+                                         const std::vector<Vec>&              src,
+                                         const std::pair<unsigned, unsigned>& face_range) const;
+    void assemble_rhs_boundary_term_momentum(const MatrixFree<dim, Number>&       data,
+                                             Vec&                                 dst,
+                                             const std::vector<Vec>&              src,
+                                             const std::pair<unsigned, unsigned>& face_range) const;
 
     /*--- Assembler function for the 'A' matrix. ---*/
-    void assemble_cell_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                           Vec&                                         dst,
-                                           const Vec&                                   src,
-                                           const std::pair<unsigned int, unsigned int>& cell_range) const;
+    void assemble_cell_term_velocity(const MatrixFree<dim, Number>&       data,
+                                     Vec&                                 dst,
+                                     const Vec&                           src,
+                                     const std::pair<unsigned, unsigned>& cell_range) const;
 
     /*--- Assembler functions for the 'B' matrix. ---*/
-    void assemble_cell_term_pressure(const MatrixFree<dim, Number>&               data,
-                                     Vec&                                         dst,
-                                     const Vec&                                   src,
-                                     const std::pair<unsigned int, unsigned int>& cell_range) const;
-    void assemble_face_term_pressure(const MatrixFree<dim, Number>&               data,
-                                     Vec&                                         dst,
-                                     const Vec&                                   src,
-                                     const std::pair<unsigned int, unsigned int>& face_range) const;
-    void assemble_boundary_term_pressure(const MatrixFree<dim, Number>&               data,
-                                         Vec&                                         dst,
-                                         const Vec&                                   src,
-                                         const std::pair<unsigned int, unsigned int>& face_range) const;
+    void assemble_cell_term_pressure(const MatrixFree<dim, Number>&       data,
+                                     Vec&                                 dst,
+                                     const Vec&                           src,
+                                     const std::pair<unsigned, unsigned>& cell_range) const;
+    void assemble_face_term_pressure(const MatrixFree<dim, Number>&       data,
+                                     Vec&                                 dst,
+                                     const Vec&                           src,
+                                     const std::pair<unsigned, unsigned>& face_range) const;
+    void assemble_boundary_term_pressure(const MatrixFree<dim, Number>&       data,
+                                         Vec&                                 dst,
+                                         const Vec&                           src,
+                                         const std::pair<unsigned, unsigned>& face_range) const;
 
-    /*--- Assembler functions for the rhs of the pressure equation. ---*/
-    void assemble_rhs_cell_term_pressure(const MatrixFree<dim, Number>&               data,
-                                         Vec&                                         dst,
-                                         const std::vector<Vec>&                      src,
-                                         const std::pair<unsigned int, unsigned int>& cell_range) const;
-    void assemble_rhs_face_term_pressure(const MatrixFree<dim, Number>&               data,
-                                         Vec&                                         dst,
-                                         const std::vector<Vec>&                      src,
-                                         const std::pair<unsigned int, unsigned int>& face_range) const;
-    void assemble_rhs_boundary_term_pressure(const MatrixFree<dim, Number>&               data,
-                                             Vec&                                         dst,
-                                             const std::vector<Vec>&                      src,
-                                             const std::pair<unsigned int, unsigned int>& face_range) const {}
-                                             /*-- No flux, so no contribution from this function ---*/
+    /*--- Assembler functions for the rhs of the energy equation. ---*/
+    void assemble_rhs_cell_term_energy(const MatrixFree<dim, Number>&       data,
+                                       Vec&                                 dst,
+                                       const std::vector<Vec>&              src,
+                                       const std::pair<unsigned, unsigned>& cell_range) const;
+    void assemble_rhs_face_term_energy(const MatrixFree<dim, Number>&       data,
+                                       Vec&                                 dst,
+                                       const std::vector<Vec>&              src,
+                                       const std::pair<unsigned, unsigned>& face_range) const;
+    void assemble_rhs_boundary_term_energy(const MatrixFree<dim, Number>&       data,
+                                           Vec&                                 dst,
+                                           const std::vector<Vec>&              src,
+                                           const std::pair<unsigned, unsigned>& face_range) const {}
+                                           /*-- No flux, so no contribution from this function ---*/
 
     /*--- Assembler function for the 'D' matrix. ---*/
-    void assemble_cell_term_internal_energy(const MatrixFree<dim, Number>&               data,
-                                            Vec&                                         dst,
-                                            const Vec&                                   src,
-                                            const std::pair<unsigned int, unsigned int>& cell_range) const;
+    void assemble_cell_term_internal_energy(const MatrixFree<dim, Number>&       data,
+                                            Vec&                                 dst,
+                                            const Vec&                           src,
+                                            const std::pair<unsigned, unsigned>& cell_range) const;
+
+    void assemble_inverse_cell_term_internal_energy(const MatrixFree<dim, Number>&       data,
+                                                    Vec&                                 dst,
+                                                    const Vec&                           src,
+                                                    const std::pair<unsigned, unsigned>& cell_range) const;
 
     /*--- Assembler function for the 'C' matrix. ---*/
-    void assemble_cell_term_enthalpy(const MatrixFree<dim, Number>&               data,
-                                     Vec&                                         dst,
-                                     const Vec&                                   src,
-                                     const std::pair<unsigned int, unsigned int>& cell_range) const;
-    void assemble_face_term_enthalpy(const MatrixFree<dim, Number>&               data,
-                                     Vec&                                         dst,
-                                     const Vec&                                   src,
-                                     const std::pair<unsigned int, unsigned int>& face_range) const;
-    void assemble_boundary_term_enthalpy(const MatrixFree<dim, Number>&               data,
-                                         Vec&                                         dst,
-                                         const Vec&                                   src,
-                                         const std::pair<unsigned int, unsigned int>& face_range) const {}
+    void assemble_cell_term_enthalpy(const MatrixFree<dim, Number>&       data,
+                                     Vec&                                 dst,
+                                     const Vec&                           src,
+                                     const std::pair<unsigned, unsigned>& cell_range) const;
+    void assemble_face_term_enthalpy(const MatrixFree<dim, Number>&       data,
+                                     Vec&                                 dst,
+                                     const Vec&                           src,
+                                     const std::pair<unsigned, unsigned>& face_range) const;
+    void assemble_boundary_term_enthalpy(const MatrixFree<dim, Number>&       data,
+                                         Vec&                                 dst,
+                                         const Vec&                           src,
+                                         const std::pair<unsigned, unsigned>& face_range) const {}
                                          /*-- No flux, so no contribution from this function ---*/
 
-    /*--- Assembler functions for the diagonal part of the matrix for the continuity equation. ---*/
-    void assemble_diagonal_cell_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                                Vec&                                         dst,
-                                                const unsigned int&                          src,
-                                                const std::pair<unsigned int, unsigned int>& cell_range) const;
+    /*--- Assembler functions for the diagonal part of the matrix for the continuity equation. For compatibilty conditions,
+          also face and boundary contributions have to be defined, even though they are empty. ---*/
+    void assemble_diagonal_cell_term_density(const MatrixFree<dim, Number>&       data,
+                                             Vec&                                 dst,
+                                             const unsigned&                      src,
+                                             const std::pair<unsigned, unsigned>& cell_range) const;
 
     /*--- Assembler functions for the diagonal part of 'A' matrix. ---*/
-    void assemble_diagonal_cell_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                                    Vec&                                         dst,
-                                                    const unsigned int&                          src,
-                                                    const std::pair<unsigned int, unsigned int>& cell_range) const;
+    void assemble_diagonal_cell_term_velocity(const MatrixFree<dim, Number>&       data,
+                                              Vec&                                 dst,
+                                              const unsigned&                      src,
+                                              const std::pair<unsigned, unsigned>& cell_range) const;
+
+    /*--- Assembler functions for the diagonal part of the ellptic operator associated to the Schur complement for the pressure. ---*/
+    void assemble_diagonal_cell_term_pressure(const MatrixFree<dim, Number>&       data,
+                                              Vec&                                 dst,
+                                              const unsigned&                      src,
+                                              const std::pair<unsigned, unsigned>& cell_range) const;
 
     /*--- Assembler functions for the diagonal part of 'D' matrix. ---*/
-    void assemble_diagonal_cell_term_internal_energy(const MatrixFree<dim, Number>&               data,
-                                                     Vec&                                         dst,
-                                                     const unsigned int&                          src,
-                                                     const std::pair<unsigned int, unsigned int>& cell_range) const;
+    void assemble_diagonal_cell_term_internal_energy(const MatrixFree<dim, Number>&       data,
+                                                     Vec&                                 dst,
+                                                     const unsigned&                      src,
+                                                     const std::pair<unsigned, unsigned>& cell_range) const;
   };
 
 
+  //////////////////////////////////////////////////////////////
+  /*---- START WITH CLASS CONSTRUCTORS ---*/
+  /////////////////////////////////////////////////////////////
+
   // Default constructor
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                     n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  EULEROperator(): MatrixFreeOperators::Base<dim, Vec>(), Ma(), Fr(), dt(), gamma(2.0 - std::sqrt(2.0)),
-                   a21(gamma), a22(0.0), a31(0.5), a32(0.5), a33(0.0),
-                   a21_tilde(0.5*gamma), a22_tilde(0.5*gamma), a31_tilde(std::sqrt(2)/4.0), a32_tilde(std::sqrt(2)/4.0),
-                   a33_tilde(1.0 - std::sqrt(2)/2.0), b1(a31_tilde), b2(a32_tilde), b3(a33_tilde),
-                   HYPERBOLIC_stage(1), NS_stage(1) {}
-
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  EULEROperator<dim,
+                fe_degree_u, fe_degree_rho, fe_degree_p,
+                n_q_points_1d, n_q_points_1d_boundary,
+                Vec>::
+  EULEROperator():
+    MatrixFreeOperators::Base<dim, Vec>(), Ma(), Fr(), dt(),
+    IMEX_stage(1), Euler_stage(1), num_flux(),
+    Ma2(), inv_Ma2(), inv_Fr2(), Ma2_ov_Fr2(),
+    gamma_m1(static_cast<Number>(EquationData::Cp_Cv) - static_cast<Number>(1.0)),
+    inv_gamma_m1(static_cast<Number>(1.0)/gamma_m1),
+    inv_Gamma(static_cast<Number>(EquationData::Cp_Cv)*inv_gamma_m1)
+    {
+      /*--- We create auxiliary vectors and tensors that will never change
+            independently on the stage, so we declare it once and for all. ---*/
+      for(unsigned d = 0; d < dim - 1; ++d) {
+        e_k[d]                   = make_vectorized_array<Number>(0.0);
+        identity[d][d]           = make_vectorized_array<Number>(1.0);
+        tmp_diagonal_velocity[d] = make_vectorized_array<Number>(1.0);
+      }
+      identity[dim - 1][dim - 1]     = make_vectorized_array<Number>(1.0);
+      e_k[dim - 1]                   = make_vectorized_array<Number>(1.0);
+      tmp_diagonal_velocity[dim - 1] = make_vectorized_array<Number>(1.0);
+    }
 
   // Constructor with runtime parameters storage
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                     n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  EULEROperator(RunTimeParameters::Data_Storage& data): MatrixFreeOperators::Base<dim, Vec>(),
-                                                        Ma(data.Mach), Fr(data.Froude), dt(data.dt),
-                                                        gamma(2.0 - std::sqrt(2.0)), a21(gamma), a22(0.0),
-                                                        a31(0.5), a32(0.5), a33(0.0),
-                                                        a21_tilde(0.5*gamma), a22_tilde(0.5*gamma),
-                                                        a31_tilde(std::sqrt(2)/4.0), a32_tilde(std::sqrt(2)/4.0),
-                                                        a33_tilde(1.0 - std::sqrt(2)/2.0), b1(a31_tilde),
-                                                        b2(a32_tilde), b3(a33_tilde), HYPERBOLIC_stage(1), NS_stage(1) {}
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  EULEROperator<dim,
+                fe_degree_u, fe_degree_rho, fe_degree_p,
+                n_q_points_1d, n_q_points_1d_boundary,
+                Vec>::
+  EULEROperator(const RunTimeParameters::Data_Storage& data,
+                const TimeStepping::RungeKutta<Number>& explicit_RK,
+                const TimeStepping::RungeKutta<Number>& implicit_RK):
+    MatrixFreeOperators::Base<dim, Vec>(),
+    Ma(data.Mach),
+    Fr(data.Froude),
+    dt(data.dt),
+    n_stages(explicit_RK.get_n_stages()),
+    IMEX_stage(1), Euler_stage(1), num_flux(Ma),
+    Ma2(Ma*Ma), inv_Ma2(static_cast<Number>(1.0)/Ma2),
+    inv_Fr2(static_cast<Number>(1.0)/(Fr*Fr)), Ma2_ov_Fr2(Ma2*inv_Fr2),
+    gamma_m1(static_cast<Number>(EquationData::Cp_Cv) - static_cast<Number>(1.0)),
+    inv_gamma_m1(static_cast<Number>(1.0)/gamma_m1),
+    inv_Gamma(static_cast<Number>(EquationData::Cp_Cv)*inv_gamma_m1)
+    {
+      /*--- We create auxiliary vectors and tensors that will never change
+            independently on the stage, so we declare it once and for all. ---*/
+      for(unsigned d = 0; d < dim - 1; ++d) {
+        e_k[d]                   = make_vectorized_array<Number>(0.0);
+        identity[d][d]           = make_vectorized_array<Number>(1.0);
+        tmp_diagonal_velocity[d] = make_vectorized_array<Number>(1.0);
+      }
+      identity[dim - 1][dim - 1]     = make_vectorized_array<Number>(1.0);
+      e_k[dim - 1]                   = make_vectorized_array<Number>(1.0);
+      tmp_diagonal_velocity[dim - 1] = make_vectorized_array<Number>(1.0);
 
+      /*--- Initialize the RK coefficients ---*/
+      explicit_RK.get_coefficients(a, b);
+      implicit_RK.get_coefficients(a_tilde, b_tilde);
+
+      Assert(n_stages == implicit_RK.get_n_stages(), ExcInternalError());
+    }
+
+
+  //////////////////////////////////////////////////////////////
+  /*---- FOCUS NOW ON SOME AUXILIARY GETTERS AND SETTERS ---*/
+  /////////////////////////////////////////////////////////////
 
   // Setter of time-step
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  set_dt(const double time_step) {
-    dt = time_step;
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  template<typename T>
+  inline DEAL_II_ALWAYS_INLINE
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  set_dt(const T time_step) {
+    dt = static_cast<Number>(time_step);
   }
 
-
-  // Setter of Mach number
+  // Getter of Mach number
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  set_Mach(const double Ma_) {
-    Ma = Ma_;
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  typename EULEROperator<dim,
+                         fe_degree_u, fe_degree_rho, fe_degree_p,
+                         n_q_points_1d, n_q_points_1d_boundary,
+                         Vec>::Number
+  EULEROperator<dim,
+                fe_degree_u, fe_degree_rho, fe_degree_p,
+                n_q_points_1d, n_q_points_1d_boundary,
+                Vec>::
+  get_Mach() const {
+    return Ma;
   }
 
-
-  // Setter of Froude number
+  // Getter of Froude number
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  set_Froude(const double Fr_) {
-    Fr = Fr_;
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  typename EULEROperator<dim,
+                         fe_degree_u, fe_degree_rho, fe_degree_p,
+                         n_q_points_1d, n_q_points_1d_boundary,
+                         Vec>::Number
+  EULEROperator<dim,
+                fe_degree_u, fe_degree_rho, fe_degree_p,
+                n_q_points_1d, n_q_points_1d_boundary,
+                Vec>::
+  get_Froude() const {
+    return Fr;
   }
 
-
-  // Setter of HYPERBOLIC stage (this can be known only during the effective execution
+  // Setter of IMEX stage (this can be known only during the effective execution
   // and so it has to be demanded to the class that really solves the problem)
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  set_HYPERBOLIC_stage(const unsigned int stage) {
-    AssertIndexRange(stage, 4);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  set_IMEX_stage(const unsigned stage) {
+    AssertIndexRange(stage, n_stages + 2);
     Assert(stage > 0, ExcInternalError());
 
-    HYPERBOLIC_stage = stage;
+    IMEX_stage = stage;
   }
 
-
-  // Setter of NS stage (this can be known only during the effective execution
+  // Setter of Euler stage (this can be known only during the effective execution
   // and so it has to be demanded to the class that really solves the problem)
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  set_NS_stage(const unsigned int stage) {
-    AssertIndexRange(stage, 7);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  set_Euler_stage(const unsigned stage) {
+    AssertIndexRange(stage, EquationData::n_vars + 1);
     Assert(stage > 0, ExcInternalError());
 
-    NS_stage = stage;
+    Euler_stage = stage;
+  }
+
+  // Getter of Euler stage (this can be known only during the effective execution
+  // and so it has to be demanded to the class that really solves the problem)
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  inline DEAL_II_ALWAYS_INLINE
+  unsigned EULEROperator<dim,
+                         fe_degree_u, fe_degree_rho, fe_degree_p,
+                         n_q_points_1d, n_q_points_1d_boundary,
+                         Vec>::
+  get_Euler_stage() const {
+    return Euler_stage;
   }
 
 
   // Setter of density for fixed point
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   set_rho_for_fixed(const Vec& src) {
     rho_for_fixed = src;
     rho_for_fixed.update_ghost_values();
   }
 
-
   // Setter of pressure for fixed point
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   set_pres_fixed(const Vec& src) {
     pres_fixed = src;
     pres_fixed.update_ghost_values();
   }
 
 
-  // Setter of velocity for fixed point
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  set_u_fixed(const Vec& src) {
-    u_fixed = src;
-    u_fixed.update_ghost_values();
-  }
-
+  //////////////////////////////////////////////////////////////
+  /*---- ASSEMBLING LINEAR AND BILINEAR FORMS FOR THE CONTINUITY EQUATION ---*/
+  /////////////////////////////////////////////////////////////
 
   // Assemble rhs cell term for the density update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_cell_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                    Vec&                                         dst,
-                                    const std::vector<Vec>&                      src,
-                                    const std::pair<unsigned int, unsigned int>& cell_range) const {
-    if(HYPERBOLIC_stage == 1) {
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_cell_term_density(const MatrixFree<dim, Number>&       data,
+                                 Vec&                                 dst,
+                                 const std::vector<Vec>&              src,
+                                 const std::pair<unsigned, unsigned>& cell_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
       /*--- We first start by declaring the suitable instances to read the old density and
       the old velocity. 'phi' will be used only to 'submit' the result.
-      The second argument specifies which dof handler has to be used (in this implementation 0 stands for
-      velocity, 1 for pressure and 2 for density). ---*/
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi(data, 2),
-                                                                   phi_rho_old(data, 2);
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old(data, 0);
+      The second argument specifies which dof handler has to be used. ---*/
+      FEEvaluation_rho              phi(data, EquationData::RHO_INDEX_DOF);
+      std::vector<FEEvaluation_rho> phi_rho(IMEX_stage - 1, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+      std::vector<FEEvaluation_u>   phi_u(IMEX_stage - 1, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
 
       /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+      for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
         /*--- Now we need to assign the current cell to each FEEvaluation object and then to specify which src vector
         it has to read (the proper order is clearly delegated to the user, which has to pay attention in the function
-        call to be coherent). All these considerations are valid also for the other assembler functions ---*/
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
+        call to be coherent). All these considerations are valid also for the other assembler functions. ---*/
+        for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+          phi_rho[s - 1].reinit(cell);
+          phi_rho[s - 1].gather_evaluate(src[2*(s-1)], EvaluationFlags::values);
+          phi_u[s - 1].reinit(cell);
+          phi_u[s - 1].gather_evaluate(src[2*(s-1) + 1], EvaluationFlags::values);
+        }
 
         phi.reinit(cell);
 
         /*--- Loop over quadrature points of each cell ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old = phi_rho_old.get_value(q);
-          const auto& u_old   = phi_u_old.get_value(q);
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          /*--- Compute the density at the previous step (always needed) ---*/
+          const auto& rho_old = phi_rho.front().get_value(q);
+
+          /*--- Compute the quantities at the previous stages for the flux ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            const auto& rho_s = phi_rho[s - 1].get_value(q);
+            const auto& u_s   = phi_u[s - 1].get_value(q);
+
+            flux += a[IMEX_stage - 1][s - 1]*dt*(rho_s*u_s);
+          }
 
           phi.submit_value(rho_old, q);
           /*--- submit_value is used for quantities to be tested against test functions ---*/
-          phi.submit_gradient(a21*dt*rho_old*u_old, q);
+          phi.submit_gradient(flux, q);
           /*--- submit_gradient is used for quantities to be tested against gradient of test functions ---*/
         }
+
         phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
         /*--- 'integrate_scatter' is the responsible of distributing into dst.
               The flag parameter specifies if we are testing against the test function and/or its gradient ---*/
       }
     }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi(data, 2),
-                                                                   phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2);
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old(data, 0),
-                                                                   phi_u_tmp_2(data, 0);
-
-      /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_u_tmp_2.reinit(cell);
-        phi_u_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-
-        phi.reinit(cell);
-
-        /*--- Loop over quadrature points of each cell ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old   = phi_rho_old.get_value(q);
-          const auto& u_old     = phi_u_old.get_value(q);
-
-          const auto& rho_tmp_2 = phi_rho_tmp_2.get_value(q);
-          const auto& u_tmp_2   = phi_u_tmp_2.get_value(q);
-
-          phi.submit_value(rho_old, q);
-          phi.submit_gradient(a31*dt*rho_old*u_old +
-                              a32*dt*rho_tmp_2*u_tmp_2, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
-      }
-    }
+    /*--- Final update ---*/
     else {
       /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi(data, 2),
-                                                                   phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2),
-                                                                   phi_rho_tmp_3(data, 2);
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old(data, 0),
-                                                                   phi_u_tmp_2(data, 0),
-                                                                   phi_u_tmp_3(data, 0);
+      FEEvaluation_rho              phi(data, EquationData::RHO_INDEX_DOF);
+      std::vector<FEEvaluation_rho> phi_rho(IMEX_stage - 1, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+      std::vector<FEEvaluation_u>   phi_u(IMEX_stage - 1, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
 
       /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_u_tmp_2.reinit(cell);
-        phi_u_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-
-        phi_rho_tmp_3.reinit(cell);
-        phi_rho_tmp_3.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_u_tmp_3.reinit(cell);
-        phi_u_tmp_3.gather_evaluate(src[5], EvaluationFlags::values);
+      for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+        for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+          phi_rho[s - 1].reinit(cell);
+          phi_rho[s - 1].gather_evaluate(src[2*(s-1)], EvaluationFlags::values);
+          phi_u[s - 1].reinit(cell);
+          phi_u[s - 1].gather_evaluate(src[2*(s-1) + 1], EvaluationFlags::values);
+        }
 
         phi.reinit(cell);
 
         /*--- Loop over quadrature points of each cell ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old   = phi_rho_old.get_value(q);
-          const auto& u_old     = phi_u_old.get_value(q);
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          /*--- Compute the density at the previous step (always needed) ---*/
+          const auto& rho_old = phi_rho.front().get_value(q);
 
-          const auto& rho_tmp_2 = phi_rho_tmp_2.get_value(q);
-          const auto& u_tmp_2   = phi_u_tmp_2.get_value(q);
+          /*--- Compute the quantities at the previous stages for the flux ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            const auto& rho_s = phi_rho[s - 1].get_value(q);
+            const auto& u_s   = phi_u[s - 1].get_value(q);
 
-          const auto& rho_tmp_3 = phi_rho_tmp_3.get_value(q);
-          const auto& u_tmp_3   = phi_u_tmp_3.get_value(q);
+            flux += b[s - 1]*dt*(rho_s*u_s);
+          }
 
           phi.submit_value(rho_old, q);
-          phi.submit_gradient(b1*dt*rho_old*u_old +
-                              b2*dt*rho_tmp_2*u_tmp_2 +
-                              b3*dt*rho_tmp_3*u_tmp_3, q);
+          phi.submit_gradient(flux, q);
         }
+
         phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
       }
     }
   }
-
 
   // Assemble rhs face term for the density update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_face_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                    Vec&                                         dst,
-                                    const std::vector<Vec>&                      src,
-                                    const std::pair<unsigned int, unsigned int>& face_range) const {
-    if(HYPERBOLIC_stage == 1) {
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_face_term_density(const MatrixFree<dim, Number>&       data,
+                                 Vec&                                 dst,
+                                 const std::vector<Vec>&              src,
+                                 const std::pair<unsigned, unsigned>& face_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
       /*--- We first start by declaring the suitable instances to read the available quantities.
             'true' means that we are reading the information from 'inside', whereas 'false' from 'outside' ---*/
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_p(data, true, 2),
-                                                                       phi_m(data, false, 2),
-                                                                       phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2);
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0);
+      FEFaceEvaluation_rho phi_m(data, true, EquationData::RHO_INDEX_DOF),
+                           phi_p(data, false, EquationData::RHO_INDEX_DOF),
+                           phi_rho_m(data, true, EquationData::RHO_INDEX_DOF),
+                           phi_rho_p(data, false, EquationData::RHO_INDEX_DOF);
+      FEFaceEvaluation_u   phi_u_m(data, true, EquationData::U_INDEX_DOF),
+                           phi_u_p(data, false, EquationData::U_INDEX_DOF);
 
       /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_rho_m.reinit(face);
+        phi_rho_p.reinit(face);
+        phi_u_m.reinit(face);
+        phi_u_p.reinit(face);
 
-        phi_p.reinit(face);
         phi_m.reinit(face);
+        phi_p.reinit(face);
 
         /*--- Loop over quadrature points of each internal face ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus       = phi_p.get_normal_vector(q); /*--- Notice that the unit normal vector is the same from
-                                                                       'both sides'. ---*/
+        for(const unsigned q : phi_m.quadrature_point_indices()) {
+          const auto& n_minus = phi_m.normal_vector(q); /*--- Notice that the unit normal vector is the same from
+                                                              'both sides'. ---*/
 
-          const auto& rho_old_p    = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m    = phi_rho_old_m.get_value(q);
-          const auto& u_old_p      = phi_u_old_p.get_value(q);
-          const auto& u_old_m      = phi_u_old_m.get_value(q);
-          const auto& avg_flux_old = 0.5*(rho_old_p*u_old_p + rho_old_m*u_old_m);
-          const auto& lambda_old   = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                              std::abs(scalar_product(u_old_m, n_plus)));
-          const auto& jump_rho_old = rho_old_p - rho_old_m;
+          /*--- Compute the quantities at the previous stages ---*/
+          VectorizedArray<Number> flux_num = make_vectorized_array<Number>(0.0);
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_rho_m.gather_evaluate(src[2*(s-1)], EvaluationFlags::values);
+            phi_rho_p.gather_evaluate(src[2*(s-1)], EvaluationFlags::values);
+            phi_u_m.gather_evaluate(src[2*(s-1) + 1], EvaluationFlags::values);
+            phi_u_p.gather_evaluate(src[2*(s-1) + 1], EvaluationFlags::values);
 
-          /*--- Using an upwind flux ---*/
-          phi_p.submit_value(-a21*dt*(scalar_product(avg_flux_old, n_plus) + 0.5*lambda_old*jump_rho_old), q);
-          phi_m.submit_value(a21*dt*(scalar_product(avg_flux_old, n_plus) + 0.5*lambda_old*jump_rho_old), q);
+            const auto& rho_s_m = phi_rho_m.get_value(q);
+            const auto& rho_s_p = phi_rho_p.get_value(q);
+            const auto& u_s_m   = phi_u_m.get_value(q);
+            const auto& u_s_p   = phi_u_p.get_value(q);
+
+            /*--- Compute the numerical flux ---*/
+            flux_num += a[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_continuity(rho_s_m, u_s_m,
+                                                           rho_s_p, u_s_p,
+                                                           n_minus);
+          }
+
+          phi_m.submit_value(-flux_num, q);
+          phi_p.submit_value(flux_num, q);
         }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
+
         phi_m.integrate_scatter(EvaluationFlags::values, dst);
+        phi_p.integrate_scatter(EvaluationFlags::values, dst);
       }
     }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_p(data, true, 2),
-                                                                       phi_m(data, false, 2),
-                                                                       phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2),
-                                                                       phi_rho_tmp_2_p(data, true, 2),
-                                                                       phi_rho_tmp_2_m(data, false, 2);
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0),
-                                                                       phi_u_tmp_2_p(data, true, 0),
-                                                                       phi_u_tmp_2_m(data, false, 0);
-
-      /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-
-        phi_rho_tmp_2_p.reinit(face);
-        phi_rho_tmp_2_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_rho_tmp_2_m.reinit(face);
-        phi_rho_tmp_2_m.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_u_tmp_2_p.reinit(face);
-        phi_u_tmp_2_p.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2_m.reinit(face);
-        phi_u_tmp_2_m.gather_evaluate(src[3], EvaluationFlags::values);
-
-        phi_p.reinit(face);
-        phi_m.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus         = phi_p.get_normal_vector(q);
-
-          const auto& rho_old_p      = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m      = phi_rho_old_m.get_value(q);
-          const auto& u_old_p        = phi_u_old_p.get_value(q);
-          const auto& u_old_m        = phi_u_old_m.get_value(q);
-          const auto& avg_flux_old   = 0.5*(rho_old_p*u_old_p + rho_old_m*u_old_m);
-          const auto& lambda_old     = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                              std::abs(scalar_product(u_old_m, n_plus)));
-          const auto& jump_rho_old   = rho_old_p - rho_old_m;
-
-          const auto& rho_tmp_2_p    = phi_rho_tmp_2_p.get_value(q);
-          const auto& rho_tmp_2_m    = phi_rho_tmp_2_m.get_value(q);
-          const auto& u_tmp_2_p      = phi_u_tmp_2_p.get_value(q);
-          const auto& u_tmp_2_m      = phi_u_tmp_2_m.get_value(q);
-          const auto& avg_flux_tmp_2 = 0.5*(rho_tmp_2_p*u_tmp_2_p + rho_tmp_2_m*u_tmp_2_m);
-          const auto& lambda_tmp_2   = std::max(std::abs(scalar_product(u_tmp_2_p, n_plus)),
-                                                std::abs(scalar_product(u_tmp_2_m, n_plus)));
-          const auto& jump_rho_tmp_2 = rho_tmp_2_p - rho_tmp_2_m;
-
-          /*--- Using an upwind flux ---*/
-          phi_p.submit_value(-a31*dt*(scalar_product(avg_flux_old, n_plus) + 0.5*lambda_old*jump_rho_old)
-                             -a32*dt*(scalar_product(avg_flux_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_tmp_2), q);
-          phi_m.submit_value(a31*dt*(scalar_product(avg_flux_old, n_plus) + 0.5*lambda_old*jump_rho_old) +
-                             a32*dt*(scalar_product(avg_flux_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_tmp_2), q);
-        }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
-        phi_m.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
+    /*--- Final update ---*/
     else {
       /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_p(data, true, 2),
-                                                                       phi_m(data, false, 2),
-                                                                       phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2),
-                                                                       phi_rho_tmp_2_p(data, true, 2),
-                                                                       phi_rho_tmp_2_m(data, false, 2),
-                                                                       phi_rho_tmp_3_p(data, true, 2),
-                                                                       phi_rho_tmp_3_m(data, false, 2);
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0),
-                                                                       phi_u_tmp_2_p(data, true, 0),
-                                                                       phi_u_tmp_2_m(data, false, 0),
-                                                                       phi_u_tmp_3_p(data, true, 0),
-                                                                       phi_u_tmp_3_m(data, false, 0);
+      FEFaceEvaluation_rho phi_m(data, true, EquationData::RHO_INDEX_DOF),
+                           phi_p(data, false, EquationData::RHO_INDEX_DOF),
+                           phi_rho_m(data, true, EquationData::RHO_INDEX_DOF),
+                           phi_rho_p(data, false, EquationData::RHO_INDEX_DOF);
+      FEFaceEvaluation_u   phi_u_m(data, true, EquationData::U_INDEX_DOF),
+                           phi_u_p(data, false, EquationData::U_INDEX_DOF);
 
       /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_rho_m.reinit(face);
+        phi_rho_p.reinit(face);
+        phi_u_m.reinit(face);
+        phi_u_p.reinit(face);
 
-        phi_rho_tmp_2_p.reinit(face);
-        phi_rho_tmp_2_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_rho_tmp_2_m.reinit(face);
-        phi_rho_tmp_2_m.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_u_tmp_2_p.reinit(face);
-        phi_u_tmp_2_p.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2_m.reinit(face);
-        phi_u_tmp_2_m.gather_evaluate(src[3], EvaluationFlags::values);
-
-        phi_rho_tmp_3_p.reinit(face);
-        phi_rho_tmp_3_p.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_rho_tmp_3_m.reinit(face);
-        phi_rho_tmp_3_m.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_u_tmp_3_p.reinit(face);
-        phi_u_tmp_3_p.gather_evaluate(src[5], EvaluationFlags::values);
-        phi_u_tmp_3_m.reinit(face);
-        phi_u_tmp_3_m.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_p.reinit(face);
         phi_m.reinit(face);
+        phi_p.reinit(face);
 
-        /*--- Loop over all quadrature points. ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus         = phi_p.get_normal_vector(q);
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi_m.quadrature_point_indices()) {
+          const auto& n_minus = phi_m.normal_vector(q);
 
-          const auto& rho_old_p      = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m      = phi_rho_old_m.get_value(q);
-          const auto& u_old_p        = phi_u_old_p.get_value(q);
-          const auto& u_old_m        = phi_u_old_m.get_value(q);
-          const auto& avg_flux_old   = 0.5*(rho_old_p*u_old_p + rho_old_m*u_old_m);
-          const auto& lambda_old     = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                              std::abs(scalar_product(u_old_m, n_plus)));
-          const auto& jump_rho_old   = rho_old_p - rho_old_m;
+          /*--- Compute the quantities at the previous stages ---*/
+          VectorizedArray<Number> flux_num = make_vectorized_array<Number>(0.0);
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_rho_m.gather_evaluate(src[2*(s-1)], EvaluationFlags::values);
+            phi_rho_p.gather_evaluate(src[2*(s-1)], EvaluationFlags::values);
+            phi_u_m.gather_evaluate(src[2*(s-1) + 1], EvaluationFlags::values);
+            phi_u_p.gather_evaluate(src[2*(s-1) + 1], EvaluationFlags::values);
 
-          const auto& rho_tmp_2_p    = phi_rho_tmp_2_p.get_value(q);
-          const auto& rho_tmp_2_m    = phi_rho_tmp_2_m.get_value(q);
-          const auto& u_tmp_2_p      = phi_u_tmp_2_p.get_value(q);
-          const auto& u_tmp_2_m      = phi_u_tmp_2_m.get_value(q);
-          const auto& avg_flux_tmp_2 = 0.5*(rho_tmp_2_p*u_tmp_2_p + rho_tmp_2_m*u_tmp_2_m);
-          const auto& lambda_tmp_2   = std::max(std::abs(scalar_product(u_tmp_2_p, n_plus)),
-                                                std::abs(scalar_product(u_tmp_2_m, n_plus)));
-          const auto& jump_rho_tmp_2 = rho_tmp_2_p - rho_tmp_2_m;
+            const auto& rho_s_m = phi_rho_m.get_value(q);
+            const auto& rho_s_p = phi_rho_p.get_value(q);
+            const auto& u_s_m   = phi_u_m.get_value(q);
+            const auto& u_s_p   = phi_u_p.get_value(q);
 
-          const auto& rho_tmp_3_p    = phi_rho_tmp_3_p.get_value(q);
-          const auto& rho_tmp_3_m    = phi_rho_tmp_3_m.get_value(q);
-          const auto& u_tmp_3_p      = phi_u_tmp_3_p.get_value(q);
-          const auto& u_tmp_3_m      = phi_u_tmp_3_m.get_value(q);
-          const auto& avg_flux_tmp_3 = 0.5*(rho_tmp_3_p*u_tmp_3_p + rho_tmp_3_m*u_tmp_3_m);
-          const auto& lambda_tmp_3   = std::max(std::abs(scalar_product(u_tmp_3_p, n_plus)),
-                                                std::abs(scalar_product(u_tmp_3_m, n_plus)));
-          const auto& jump_rho_tmp_3 = rho_tmp_3_p - rho_tmp_3_m;
+            /*--- Compute the numerical_flux ---*/
+            flux_num += b[s - 1]*dt*
+                        num_flux.numerical_flux_continuity(rho_s_m, u_s_m,
+                                                           rho_s_p, u_s_p,
+                                                           n_minus);
+          }
 
-          /*--- Using an upwind flux ---*/
-          phi_p.submit_value(-b1*dt*(scalar_product(avg_flux_old, n_plus) + 0.5*lambda_old*jump_rho_old)
-                             -b2*dt*(scalar_product(avg_flux_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_tmp_2)
-                             -b3*dt*(scalar_product(avg_flux_tmp_3, n_plus) + 0.5*lambda_tmp_3*jump_rho_tmp_3), q);
-          phi_m.submit_value(b1*dt*(scalar_product(avg_flux_old, n_plus) + 0.5*lambda_old*jump_rho_old) +
-                             b2*dt*(scalar_product(avg_flux_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_tmp_2) +
-                             b3*dt*(scalar_product(avg_flux_tmp_3, n_plus) + 0.5*lambda_tmp_3*jump_rho_tmp_3), q);
+          phi_m.submit_value(-flux_num, q);
+          phi_p.submit_value(flux_num, q);
         }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
+
         phi_m.integrate_scatter(EvaluationFlags::values, dst);
+        phi_p.integrate_scatter(EvaluationFlags::values, dst);
       }
     }
   }
-
 
   // Put together all the previous steps for density update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  vmult_rhs_rho_update(Vec& dst, const std::vector<Vec>& src) const {
-    for(unsigned int d = 0; d < src.size(); ++d) {
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  vmult_rhs_density(Vec& dst, const std::vector<Vec>& src) const {
+    for(unsigned d = 0; d < src.size(); ++d) {
       src[d].update_ghost_values();
     }
 
-    this->data->loop(&EULEROperator::assemble_rhs_cell_term_rho_update,
-                     &EULEROperator::assemble_rhs_face_term_rho_update,
-                     &EULEROperator::assemble_rhs_boundary_term_rho_update,
+    this->data->loop(&EULEROperator::assemble_rhs_cell_term_density,
+                     &EULEROperator::assemble_rhs_face_term_density,
+                     &EULEROperator::assemble_rhs_boundary_term_density,
                      this, dst, src, true,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified);
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values,
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values);
   }
-
 
   // Assemble cell term for the density update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_cell_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                    Vec&                                         dst,
-                                    const Vec&                                   src,
-                                    const std::pair<unsigned int, unsigned int>& cell_range) const {
-    FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi(data, 2);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_cell_term_density(const MatrixFree<dim, Number>&       data,
+                             Vec&                                 dst,
+                             const Vec&                           src,
+                             const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation<dim, fe_degree_rho, fe_degree_rho + 1, 1, Number> phi(data, EquationData::RHO_INDEX_DOF, 3);
+
+    MatrixFreeOperators::CellwiseInverseMassMatrix<dim, fe_degree_rho, 1, Number> inverse(phi);
 
     /*--- Loop over all cells ---*/
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
       phi.reinit(cell);
-      phi.gather_evaluate(src, EvaluationFlags::values);
+      phi.read_dof_values(src);
 
-      /*--- Loop over all quadrature points ---*/
-      for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-        phi.submit_value(phi.get_value(q), q); /*--- Here we need to assemble just a mass matrix,
-                                                     so we simply test against the test fuction, the 'src' vector ---*/
-      }
+      inverse.apply(phi.begin_dof_values(),
+                    phi.begin_dof_values());
 
-      phi.integrate_scatter(EvaluationFlags::values, dst);
+      phi.set_dof_values(dst);
     }
   }
 
 
-  // Assemble rhs cell term for the pressure
+  //////////////////////////////////////////////////////////////
+  /*---- ASSEMBLING LINEAR AND BILINEAR FORMS FOR THE MOMENTUM EQUATION ---*/
+  /////////////////////////////////////////////////////////////
+
+  // Assemble rhs cell term of the momentum equation
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_cell_term_pressure(const MatrixFree<dim, Number>&               data,
-                                  Vec&                                         dst,
-                                  const std::vector<Vec>&                      src,
-                                  const std::pair<unsigned int, unsigned int>& cell_range) const {
-    if(HYPERBOLIC_stage == 1) {
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_cell_term_momentum(const MatrixFree<dim, Number>&       data,
+                                  Vec&                                 dst,
+                                  const std::vector<Vec>&              src,
+                                  const std::pair<unsigned, unsigned>& cell_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
       /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi(data, 1),
-                                                                   phi_pres_old(data, 1);
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old(data, 0),
-                                                                   phi_u_fixed(data, 0);
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2);
+      FEEvaluation_u                 phi(data, EquationData::U_INDEX_DOF);
+      std::vector<FEEvaluation_u>    phi_u(IMEX_stage - 1, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
+      std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
+      std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
 
       /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old.reinit(cell);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_fixed.reinit(cell);
-        phi_u_fixed.gather_evaluate(src[4], EvaluationFlags::values);
+      for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+        for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+          phi_rho[s - 1].reinit(cell);
+          phi_rho[s - 1].gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+          phi_u[s - 1].reinit(cell);
+          phi_u[s - 1].gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+          phi_pres[s - 1].reinit(cell);
+          phi_pres[s - 1].gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+        }
+        phi_rho.back().reinit(cell);
+        phi_rho.back().gather_evaluate(src[3*(IMEX_stage - 1)], EvaluationFlags::values);
 
         phi.reinit(cell);
 
         /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old   = phi_rho_old.get_value(q);
-          const auto& u_old     = phi_u_old.get_value(q);
-          const auto& pres_old  = phi_pres_old.get_value(q);
-          const auto& E_old     = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_old/rho_old)
-                                + 0.5*Ma*Ma*scalar_product(u_old, u_old);
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          /*--- Compute the density and the velocity at the previous step (always necessary).
+                Notice that this is ok because of ESDIRK method. ---*/
+          const auto& rho_old = phi_rho.front().get_value(q);
+          const auto& u_old   = phi_u.front().get_value(q);
 
-          /*--- We assign to the rhs the contribution due to kinetic energy in the fixed point loop ---*/
-          const auto& rho_tmp_2 = phi_rho_tmp_2.get_value(q);
-          const auto& u_fixed   = phi_u_fixed.get_value(q);
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<2, dim, VectorizedArray<Number>> flux;
+          Tensor<1, dim, VectorizedArray<Number>> gravity_term;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            const auto& u_s = phi_u[s - 1].get_value(q);
 
-          /*--- Compute the unit normal vecotr for gravity, which for spherical geoemetry is radial and therefore space dependent ---*/
-          Tensor<1, dim, VectorizedArray<Number>> e_r;
-          const auto& point_vectorized = phi.quadrature_point(q);
-          Point<dim> point;
-          for(unsigned int v = 0; v < VectorizedArray<Number>::size(); ++v) {
-            for(unsigned int d = 0; d < dim; ++d) {
-              point[d] = point_vectorized[d][v];
-            }
+            const auto& p_s_times_identity = phi_pres[s - 1].get_value(q)*identity;
+
+            const auto& rho_s = phi_rho[s - 1].get_value(q);
+
+            flux += a[IMEX_stage - 1][s - 1]*dt*(rho_s*outer_product(u_s, u_s)) +
+                    a_tilde[IMEX_stage - 1][s - 1]*dt*(inv_Ma2*p_s_times_identity);
+
+            gravity_term += a_tilde[IMEX_stage - 1][s - 1]*dt*(inv_Fr2*rho_s*e_k);
           }
-          const double radius  = std::sqrt(point[0]*point[0] + point[1]*point[1] + point[2]*point[2]);
-          const double phi_lat = std::asin(point[2]/radius);
-          const double lambda  = std::atan2(point[1], point[0]);
-          e_r[0] = make_vectorized_array<Number>(std::cos(phi_lat)*std::cos(lambda));
-          e_r[1] = make_vectorized_array<Number>(std::cos(phi_lat)*std::sin(lambda));
-          e_r[2] = make_vectorized_array<Number>(std::sin(phi_lat));
 
-          phi.submit_value(rho_old*E_old -
-                           0.5*rho_tmp_2*Ma*Ma*scalar_product(u_fixed, u_fixed) -
-                           a21_tilde*dt*Ma*Ma/(Fr*Fr)*rho_old*scalar_product(u_old, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           a22_tilde*dt*Ma*Ma/(Fr*Fr)*rho_tmp_2*scalar_product(u_fixed, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref), q);
-          phi.submit_gradient(0.5*a21*dt*Ma*Ma*scalar_product(u_old, u_old)*rho_old*u_old +
-                              a21_tilde*dt*(rho_old*(E_old - 0.5*Ma*Ma*scalar_product(u_old, u_old)) + pres_old)*u_old, q);
-          /*--- The specific enthalpy is computed with the generic relation e + p/rho ---*/
+          /*--- Add last contribution of the gravity term (implicit treatment) ---*/
+          const auto& rho_s = phi_rho.back().get_value(q);
+          gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Fr2*rho_s*e_k);
+
+          phi.submit_value(rho_old*u_old - gravity_term, q);
+          phi.submit_gradient(flux, q);
         }
+
         phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
       }
     }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi(data, 1),
-                                                                   phi_pres_old(data, 1),
-                                                                   phi_pres_tmp_2(data, 1);
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old(data, 0),
-                                                                   phi_u_tmp_2(data, 0),
-                                                                   phi_u_fixed(data, 0);
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2),
-                                                                   phi_rho_tmp_3(data, 2);
-
-      /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old.reinit(cell);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2.reinit(cell);
-        phi_u_tmp_2.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2.reinit(cell);
-        phi_pres_tmp_2.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_rho_tmp_3.reinit(cell);
-        phi_rho_tmp_3.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_u_fixed.reinit(cell);
-        phi_u_fixed.gather_evaluate(src[7], EvaluationFlags::values);
-
-        phi.reinit(cell);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old    = phi_rho_old.get_value(q);
-          const auto& u_old      = phi_u_old.get_value(q);
-          const auto& pres_old   = phi_pres_old.get_value(q);
-          const auto& E_old      = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_old/rho_old)
-                                 + 0.5*Ma*Ma*scalar_product(u_old, u_old);
-
-          const auto& rho_tmp_2  = phi_rho_tmp_2.get_value(q);
-          const auto& u_tmp_2    = phi_u_tmp_2.get_value(q);
-          const auto& pres_tmp_2 = phi_pres_tmp_2.get_value(q);
-          const auto& E_tmp_2    = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_tmp_2/rho_tmp_2)
-                                 + 0.5*Ma*Ma*scalar_product(u_tmp_2, u_tmp_2);
-
-          const auto& rho_tmp_3  = phi_rho_tmp_3.get_value(q);
-          const auto& u_fixed    = phi_u_fixed.get_value(q);
-
-          /*--- Compute the unit normal vecotr for gravity, which for spherical geoemetry is radial and therefore space dependent ---*/
-          Tensor<1, dim, VectorizedArray<Number>> e_r;
-          const auto& point_vectorized = phi.quadrature_point(q);
-          Point<dim> point;
-          for(unsigned int v = 0; v < VectorizedArray<Number>::size(); ++v) {
-            for(unsigned int d = 0; d < dim; ++d) {
-              point[d] = point_vectorized[d][v];
-            }
-          }
-          const double radius  = std::sqrt(point[0]*point[0] + point[1]*point[1] + point[2]*point[2]);
-          const double phi_lat = std::asin(point[2]/radius);
-          const double lambda  = std::atan2(point[1], point[0]);
-          e_r[0] = make_vectorized_array<Number>(std::cos(phi_lat)*std::cos(lambda));
-          e_r[1] = make_vectorized_array<Number>(std::cos(phi_lat)*std::sin(lambda));
-          e_r[2] = make_vectorized_array<Number>(std::sin(phi_lat));
-
-          phi.submit_value(rho_old*E_old -
-                           0.5*rho_tmp_3*Ma*Ma*scalar_product(u_fixed, u_fixed) -
-                           a31_tilde*dt*Ma*Ma/(Fr*Fr)*rho_old*scalar_product(u_old, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           a32_tilde*dt*Ma*Ma/(Fr*Fr)*rho_tmp_2*scalar_product(u_tmp_2, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           a33_tilde*dt*Ma*Ma/(Fr*Fr)*rho_tmp_3*scalar_product(u_fixed, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref), q);
-          phi.submit_gradient(0.5*a31*dt*Ma*Ma*scalar_product(u_old, u_old)*rho_old*u_old +
-                              a31_tilde*dt*
-                              (rho_old*(E_old - 0.5*Ma*Ma*scalar_product(u_old, u_old)) + pres_old)*u_old +
-                              0.5*a32*dt*Ma*Ma*scalar_product(u_tmp_2, u_tmp_2)*rho_tmp_2*u_tmp_2 +
-                              a32_tilde*dt*
-                              (rho_tmp_2*(E_tmp_2 - 0.5*Ma*Ma*scalar_product(u_tmp_2, u_tmp_2)) + pres_tmp_2)*u_tmp_2, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
-      }
-    }
+    /*--- Final update ---*/
     else {
       /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi(data, 1),
-                                                                   phi_pres_old(data, 1),
-                                                                   phi_pres_tmp_2(data, 1),
-                                                                   phi_pres_tmp_3(data, 1);
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old(data, 0),
-                                                                   phi_u_tmp_2(data, 0),
-                                                                   phi_u_tmp_3(data, 0),
-                                                                   phi_u_fixed(data, 0);
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2),
-                                                                   phi_rho_tmp_3(data, 2),
-                                                                   phi_rho_curr(data, 2);
+      FEEvaluation_u                 phi(data, EquationData::U_INDEX_DOF);
+      std::vector<FEEvaluation_u>    phi_u(IMEX_stage - 1, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
+      std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
+      std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage - 1, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
 
       /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old.reinit(cell);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2.reinit(cell);
-        phi_u_tmp_2.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2.reinit(cell);
-        phi_pres_tmp_2.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_rho_tmp_3.reinit(cell);
-        phi_rho_tmp_3.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_u_tmp_3.reinit(cell);
-        phi_u_tmp_3.gather_evaluate(src[7], EvaluationFlags::values);
-        phi_pres_tmp_3.reinit(cell);
-        phi_pres_tmp_3.gather_evaluate(src[8], EvaluationFlags::values);
-
-        phi_rho_curr.reinit(cell);
-        phi_rho_curr.gather_evaluate(src[9], EvaluationFlags::values);
-        phi_u_fixed.reinit(cell);
-        phi_u_fixed.gather_evaluate(src[10], EvaluationFlags::values);
+      for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+        for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+          phi_rho[s - 1].reinit(cell);
+          phi_rho[s - 1].gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+          phi_u[s - 1].reinit(cell);
+          phi_u[s - 1].gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+          phi_pres[s - 1].reinit(cell);
+          phi_pres[s - 1].gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+        }
 
         phi.reinit(cell);
 
         /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old    = phi_rho_old.get_value(q);
-          const auto& u_old      = phi_u_old.get_value(q);
-          const auto& pres_old   = phi_pres_old.get_value(q);
-          const auto& E_old      = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_old/rho_old)
-                                 + 0.5*Ma*Ma*scalar_product(u_old, u_old);
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          /*--- Compute the density and the velocity at the previous step (always necessary).
+                Notice that this is ok because of ESDIRK method. ---*/
+          const auto& rho_old = phi_rho.front().get_value(q);
+          const auto& u_old   = phi_u.front().get_value(q);
 
-          const auto& rho_tmp_2  = phi_rho_tmp_2.get_value(q);
-          const auto& u_tmp_2    = phi_u_tmp_2.get_value(q);
-          const auto& pres_tmp_2 = phi_pres_tmp_2.get_value(q);
-          const auto& E_tmp_2    = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_tmp_2/rho_tmp_2)
-                                 + 0.5*Ma*Ma*scalar_product(u_tmp_2, u_tmp_2);
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<2, dim, VectorizedArray<Number>> flux;
+          Tensor<1, dim, VectorizedArray<Number>> gravity_term;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            const auto& u_s = phi_u[s - 1].get_value(q);
 
-          const auto& rho_tmp_3  = phi_rho_tmp_3.get_value(q);
-          const auto& u_tmp_3    = phi_u_tmp_3.get_value(q);
-          const auto& pres_tmp_3 = phi_pres_tmp_3.get_value(q);
-          const auto& E_tmp_3    = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_tmp_3/rho_tmp_3)
-                                 + 0.5*Ma*Ma*scalar_product(u_tmp_3, u_tmp_3);
+            const auto& p_s_times_identity = phi_pres[s - 1].get_value(q)*identity;
 
-          const auto& rho_curr   = phi_rho_curr.get_value(q);
-          const auto& u_fixed    = phi_u_fixed.get_value(q);
+            const auto& rho_s = phi_rho[s - 1].get_value(q);
 
-          /*--- Compute the unit normal vecotr for gravity, which for spherical geoemetry is radial and therefore space dependent ---*/
-          Tensor<1, dim, VectorizedArray<Number>> e_r;
-          const auto& point_vectorized = phi.quadrature_point(q);
-          Point<dim> point;
-          for(unsigned int v = 0; v < VectorizedArray<Number>::size(); ++v) {
-            for(unsigned int d = 0; d < dim; ++d) {
-              point[d] = point_vectorized[d][v];
-            }
+            flux += b[s - 1]*dt*(rho_s*outer_product(u_s, u_s)) +
+                    b_tilde[s - 1]*dt*(inv_Ma2*p_s_times_identity);
+
+            gravity_term += b_tilde[s - 1]*dt*(inv_Fr2*rho_s*e_k);
           }
-          const double radius  = std::sqrt(point[0]*point[0] + point[1]*point[1] + point[2]*point[2]);
-          const double phi_lat = std::asin(point[2]/radius);
-          const double lambda  = std::atan2(point[1], point[0]);
-          e_r[0] = make_vectorized_array<Number>(std::cos(phi_lat)*std::cos(lambda));
-          e_r[1] = make_vectorized_array<Number>(std::cos(phi_lat)*std::sin(lambda));
-          e_r[2] = make_vectorized_array<Number>(std::sin(phi_lat));
 
-          phi.submit_value(rho_old*E_old -
-                           0.5*rho_curr*Ma*Ma*scalar_product(u_fixed, u_fixed) -
-                           b1*dt*Ma*Ma/(Fr*Fr)*rho_old*scalar_product(u_old, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           b2*dt*Ma*Ma/(Fr*Fr)*rho_tmp_2*scalar_product(u_tmp_2, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           b3*dt*Ma*Ma/(Fr*Fr)*rho_tmp_3*scalar_product(u_tmp_3, e_r)*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref), q);
-          phi.submit_gradient(0.5*b1*dt*Ma*Ma*scalar_product(u_old, u_old)*rho_old*u_old +
-                              b1*dt*(rho_old*(E_old - 0.5*Ma*Ma*scalar_product(u_old, u_old)) + pres_old)*u_old +
-                              0.5*b2*dt*Ma*Ma*scalar_product(u_tmp_2, u_tmp_2)*rho_tmp_2*u_tmp_2 +
-                              b2*dt*(rho_tmp_2*(E_tmp_2 - 0.5*Ma*Ma*scalar_product(u_tmp_2, u_tmp_2)) + pres_tmp_2)*u_tmp_2 +
-                              0.5*b3*dt*Ma*Ma*scalar_product(u_tmp_3, u_tmp_3)*rho_tmp_3*u_tmp_3 +
-                              b3*dt*(rho_tmp_3*(E_tmp_3 - 0.5*Ma*Ma*scalar_product(u_tmp_3, u_tmp_3)) + pres_tmp_3)*u_tmp_3, q);
+          phi.submit_value(rho_old*u_old - gravity_term, q);
+          phi.submit_gradient(flux, q);
         }
+
         phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
       }
     }
   }
 
-
-  // Assemble rhs face term for the pressure
+  // Assemble rhs face term of the momentum equation
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_face_term_pressure(const MatrixFree<dim, Number>&               data,
-                                  Vec&                                         dst,
-                                  const std::vector<Vec>&                      src,
-                                  const std::pair<unsigned int, unsigned int>& face_range) const {
-    if(HYPERBOLIC_stage == 1) {
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary, typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_face_term_momentum(const MatrixFree<dim, Number>&       data,
+                                  Vec&                                 dst,
+                                  const std::vector<Vec>&              src,
+                                  const std::pair<unsigned, unsigned>& face_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
       /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_p(data, true, 1),
-                                                                       phi_m(data, false, 1),
-                                                                       phi_pres_old_p(data, true, 1),
-                                                                       phi_pres_old_m(data, false, 1);
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0);
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2);
+      FEFaceEvaluation_u    phi_m(data, true, EquationData::U_INDEX_DOF),
+                            phi_p(data, false, EquationData::U_INDEX_DOF),
+                            phi_u_m(data, true, EquationData::U_INDEX_DOF),
+                            phi_u_p(data, false, EquationData::U_INDEX_DOF);
+      FEFaceEvaluation_pres phi_pres_m(data, true, EquationData::P_INDEX_DOF),
+                            phi_pres_p(data, false, EquationData::P_INDEX_DOF);
+      FEFaceEvaluation_rho  phi_rho_m(data, true, EquationData::RHO_INDEX_DOF),
+                            phi_rho_p(data, false, EquationData::RHO_INDEX_DOF);
 
       /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old_p.reinit(face);
-        phi_pres_old_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_pres_old_m.reinit(face);
-        phi_pres_old_m.gather_evaluate(src[2], EvaluationFlags::values);
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_rho_m.reinit(face);
+        phi_rho_p.reinit(face);
+        phi_u_m.reinit(face);
+        phi_u_p.reinit(face);
+        phi_pres_m.reinit(face);
+        phi_pres_p.reinit(face);
 
-        phi_p.reinit(face);
         phi_m.reinit(face);
-
-        /*--- Loop over quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus           = phi_p.get_normal_vector(q);
-
-          const auto& rho_old_p        = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m        = phi_rho_old_m.get_value(q);
-          const auto& u_old_p          = phi_u_old_p.get_value(q);
-          const auto& u_old_m          = phi_u_old_m.get_value(q);
-          const auto& avg_kinetic_old  = 0.5*(0.5*scalar_product(u_old_p, u_old_p)*rho_old_p*u_old_p +
-                                              0.5*scalar_product(u_old_m, u_old_m)*rho_old_m*u_old_m);
-
-          const auto& pres_old_p       = phi_pres_old_p.get_value(q);
-          const auto& pres_old_m       = phi_pres_old_m.get_value(q);
-          const auto& E_old_p          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_old_p/rho_old_p
-                                       + 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p);
-          const auto& E_old_m          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_old_m/rho_old_m
-                                       + 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m);
-          const auto& avg_enthalpy_old = 0.5*(((E_old_p - 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p))*rho_old_p + pres_old_p)*u_old_p +
-                                              ((E_old_m - 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m))*rho_old_m + pres_old_m)*u_old_m);
-
-          const auto& lambda_old       = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                                  std::abs(scalar_product(u_old_m, n_plus)));
-          const auto& jump_rho_kin_old = rho_old_p*0.5*scalar_product(u_old_p, u_old_p) -
-                                         rho_old_m*0.5*scalar_product(u_old_m, u_old_m);
-          const auto& jump_rho_e_old   = rho_old_p*(E_old_p - 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p)) -
-                                         rho_old_m*(E_old_m - 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m));
-
-          phi_p.submit_value(-a21*dt*Ma*Ma*(scalar_product(avg_kinetic_old, n_plus) + 0.5*lambda_old*jump_rho_kin_old)
-                             -a21_tilde*dt*(scalar_product(avg_enthalpy_old, n_plus) + 0.5*lambda_old*jump_rho_e_old), q);
-          phi_m.submit_value(a21*dt*Ma*Ma*(scalar_product(avg_kinetic_old, n_plus) + 0.5*lambda_old*jump_rho_kin_old) +
-                             a21_tilde*dt*(scalar_product(avg_enthalpy_old, n_plus) + 0.5*lambda_old*jump_rho_e_old), q);
-        }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
-        phi_m.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_p(data, true, 1),
-                                                                       phi_m(data, false, 1),
-                                                                       phi_pres_old_p(data, true, 1),
-                                                                       phi_pres_old_m(data, false, 1),
-                                                                       phi_pres_tmp_2_p(data, true, 1),
-                                                                       phi_pres_tmp_2_m(data, false, 1);
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0),
-                                                                       phi_u_tmp_2_p(data, true, 0),
-                                                                       phi_u_tmp_2_m(data, false, 0);
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2),
-                                                                       phi_rho_tmp_2_p(data, true, 2),
-                                                                       phi_rho_tmp_2_m(data, false, 2);
-
-      /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old_p.reinit(face);
-        phi_pres_old_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_pres_old_m.reinit(face);
-        phi_pres_old_m.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2_p.reinit(face);
-        phi_rho_tmp_2_p.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_rho_tmp_2_m.reinit(face);
-        phi_rho_tmp_2_m.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2_p.reinit(face);
-        phi_u_tmp_2_p.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_u_tmp_2_m.reinit(face);
-        phi_u_tmp_2_m.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2_p.reinit(face);
-        phi_pres_tmp_2_p.gather_evaluate(src[5], EvaluationFlags::values);
-        phi_pres_tmp_2_m.reinit(face);
-        phi_pres_tmp_2_m.gather_evaluate(src[5], EvaluationFlags::values);
-
         phi_p.reinit(face);
-        phi_m.reinit(face);
 
         /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus             = phi_p.get_normal_vector(q);
+        for(const unsigned q : phi_m.quadrature_point_indices()) {
+          const auto& n_minus = phi_m.normal_vector(q);
 
-          const auto& rho_old_p          = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m          = phi_rho_old_m.get_value(q);
-          const auto& u_old_p            = phi_u_old_p.get_value(q);
-          const auto& u_old_m            = phi_u_old_m.get_value(q);
-          const auto& avg_kinetic_old    = 0.5*(0.5*scalar_product(u_old_p, u_old_p)*rho_old_p*u_old_p +
-                                                0.5*scalar_product(u_old_m, u_old_m)*rho_old_m*u_old_m);
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux_num;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_rho_m.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_rho_p.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_u_m.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_u_p.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_pres_m.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+            phi_pres_p.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
 
-          const auto& pres_old_p         = phi_pres_old_p.get_value(q);
-          const auto& pres_old_m         = phi_pres_old_m.get_value(q);
-          const auto& E_old_p            = 1.0/(EquationData::Cp_Cv - 1.0)*pres_old_p/rho_old_p
-                                         + 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p);
-          const auto& E_old_m            = 1.0/(EquationData::Cp_Cv - 1.0)*pres_old_m/rho_old_m
-                                         + 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m);
-          const auto& avg_enthalpy_old   = 0.5*
-                                           (((E_old_p - 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p))*rho_old_p + pres_old_p)*u_old_p +
-                                            ((E_old_m - 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m))*rho_old_m + pres_old_m)*u_old_m);
+            const auto& rho_s_m  = phi_rho_m.get_value(q);
+            const auto& rho_s_p  = phi_rho_p.get_value(q);
+            const auto& u_s_m    = phi_u_m.get_value(q);
+            const auto& u_s_p    = phi_u_p.get_value(q);
+            const auto& pres_s_m = phi_pres_m.get_value(q);
+            const auto& pres_s_p = phi_pres_p.get_value(q);
 
-          const auto& lambda_old         = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                                    std::abs(scalar_product(u_old_m, n_plus)));
-          const auto& jump_rho_kin_old   = rho_old_p*0.5*scalar_product(u_old_p, u_old_p) -
-                                           rho_old_m*0.5*scalar_product(u_old_m, u_old_m);
-          const auto& jump_rho_e_old     = rho_old_p*(E_old_p - 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p)) -
-                                           rho_old_m*(E_old_m - 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m));
+            /*--- Compute the numerical flux ---*/
+            flux_num += a[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_momentum_explicit(rho_s_m, u_s_m,
+                                                                  rho_s_p, u_s_p,
+                                                                  n_minus)
+                      + a_tilde[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_momentum_implicit(pres_s_m,
+                                                                  pres_s_p,
+                                                                  n_minus);
+          }
 
-          const auto& rho_tmp_2_p        = phi_rho_tmp_2_p.get_value(q);
-          const auto& rho_tmp_2_m        = phi_rho_tmp_2_m.get_value(q);
-          const auto& u_tmp_2_p          = phi_u_tmp_2_p.get_value(q);
-          const auto& u_tmp_2_m          = phi_u_tmp_2_m.get_value(q);
-          const auto& avg_kinetic_tmp_2  = 0.5*(0.5*scalar_product(u_tmp_2_p, u_tmp_2_p)*rho_tmp_2_p*u_tmp_2_p +
-                                                0.5*scalar_product(u_tmp_2_m, u_tmp_2_m)*rho_tmp_2_m*u_tmp_2_m);
-
-          const auto& pres_tmp_2_p       = phi_pres_tmp_2_p.get_value(q);
-          const auto& pres_tmp_2_m       = phi_pres_tmp_2_m.get_value(q);
-          const auto& E_tmp_2_p          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_tmp_2_p/rho_tmp_2_p
-                                         + 0.5*Ma*Ma*scalar_product(u_tmp_2_p, u_tmp_2_p);
-          const auto& E_tmp_2_m          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_tmp_2_m/rho_tmp_2_m
-                                         + 0.5*Ma*Ma*scalar_product(u_tmp_2_m, u_tmp_2_m);
-          const auto& avg_enthalpy_tmp_2 = 0.5*
-                                           (((E_tmp_2_p - 0.5*Ma*Ma*scalar_product(u_tmp_2_p, u_tmp_2_p))*rho_tmp_2_p +
-                                              pres_tmp_2_p)*u_tmp_2_p +
-                                            ((E_tmp_2_m - 0.5*Ma*Ma*scalar_product(u_tmp_2_m, u_tmp_2_m))*rho_tmp_2_m +
-                                              pres_tmp_2_m)*u_tmp_2_m);
-
-          const auto& lambda_tmp_2       = std::max(std::abs(scalar_product(u_tmp_2_p, n_plus)),
-                                                    std::abs(scalar_product(u_tmp_2_m, n_plus)));
-          const auto& jump_rho_kin_tmp_2 = rho_tmp_2_p*0.5*scalar_product(u_tmp_2_p, u_old_p) -
-                                           rho_tmp_2_m*0.5*scalar_product(u_tmp_2_m, u_old_m);
-          const auto& jump_rho_e_tmp_2   = rho_tmp_2_p*(E_tmp_2_p - 0.5*Ma*Ma*scalar_product(u_tmp_2_p, u_tmp_2_p)) -
-                                           rho_tmp_2_m*(E_tmp_2_m - 0.5*Ma*Ma*scalar_product(u_tmp_2_m, u_tmp_2_m));
-
-          phi_p.submit_value(-a31*dt*Ma*Ma*(scalar_product(avg_kinetic_old, n_plus) + 0.5*lambda_old*jump_rho_kin_old)
-                             -a31_tilde*dt*(scalar_product(avg_enthalpy_old, n_plus) + 0.5*lambda_old*jump_rho_e_old)
-                             -a32*dt*Ma*Ma*(scalar_product(avg_kinetic_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_kin_tmp_2)
-                             -a32_tilde*dt*(scalar_product(avg_enthalpy_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_e_tmp_2), q);
-          phi_m.submit_value(a31*dt*Ma*Ma*(scalar_product(avg_kinetic_old, n_plus) + 0.5*lambda_old*jump_rho_kin_old) +
-                             a31_tilde*dt*(scalar_product(avg_enthalpy_old, n_plus) + 0.5*lambda_old*jump_rho_e_old) +
-                             a32*dt*Ma*Ma*(scalar_product(avg_kinetic_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_kin_tmp_2) +
-                             a32_tilde*dt*(scalar_product(avg_enthalpy_tmp_2, n_plus) + 0.5*lambda_tmp_2*jump_rho_e_tmp_2), q);
+          phi_m.submit_value(-flux_num, q);
+          phi_p.submit_value(flux_num, q);
         }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
+
         phi_m.integrate_scatter(EvaluationFlags::values, dst);
+        phi_p.integrate_scatter(EvaluationFlags::values, dst);
       }
     }
+    /*--- Final update ---*/
     else {
       /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_p(data, true, 1),
-                                                                       phi_m(data, false, 1),
-                                                                       phi_pres_old_p(data, true, 1),
-                                                                       phi_pres_old_m(data, false, 1),
-                                                                       phi_pres_tmp_2_p(data, true, 1),
-                                                                       phi_pres_tmp_2_m(data, false, 1),
-                                                                       phi_pres_tmp_3_p(data, true, 1),
-                                                                       phi_pres_tmp_3_m(data, false, 1);
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0),
-                                                                       phi_u_tmp_2_p(data, true, 0),
-                                                                       phi_u_tmp_2_m(data, false, 0),
-                                                                       phi_u_tmp_3_p(data, true, 0),
-                                                                       phi_u_tmp_3_m(data, false, 0);
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2),
-                                                                       phi_rho_tmp_2_p(data, true, 2),
-                                                                       phi_rho_tmp_2_m(data, false, 2),
-                                                                       phi_rho_tmp_3_p(data, true, 2),
-                                                                       phi_rho_tmp_3_m(data, false, 2);
+      FEFaceEvaluation_u    phi_m(data, true, EquationData::U_INDEX_DOF),
+                            phi_p(data, false, EquationData::U_INDEX_DOF),
+                            phi_u_m(data, true, EquationData::U_INDEX_DOF),
+                            phi_u_p(data, false, EquationData::U_INDEX_DOF);
+      FEFaceEvaluation_pres phi_pres_m(data, true, EquationData::P_INDEX_DOF),
+                            phi_pres_p(data, false, EquationData::P_INDEX_DOF);
+      FEFaceEvaluation_rho  phi_rho_m(data, true, EquationData::RHO_INDEX_DOF),
+                            phi_rho_p(data, false, EquationData::RHO_INDEX_DOF);
 
-      /*--- loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old_p.reinit(face);
-        phi_pres_old_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_pres_old_m.reinit(face);
-        phi_pres_old_m.gather_evaluate(src[2], EvaluationFlags::values);
+      /*--- Loop over all internal faces ---*/
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_rho_m.reinit(face);
+        phi_rho_p.reinit(face);
+        phi_u_m.reinit(face);
+        phi_u_p.reinit(face);
+        phi_pres_m.reinit(face);
+        phi_pres_p.reinit(face);
 
-        phi_rho_tmp_2_p.reinit(face);
-        phi_rho_tmp_2_p.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_rho_tmp_2_m.reinit(face);
-        phi_rho_tmp_2_m.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2_p.reinit(face);
-        phi_u_tmp_2_p.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_u_tmp_2_m.reinit(face);
-        phi_u_tmp_2_m.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2_p.reinit(face);
-        phi_pres_tmp_2_p.gather_evaluate(src[5], EvaluationFlags::values);
-        phi_pres_tmp_2_m.reinit(face);
-        phi_pres_tmp_2_m.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_rho_tmp_3_p.reinit(face);
-        phi_rho_tmp_3_p.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_rho_tmp_3_m.reinit(face);
-        phi_rho_tmp_3_m.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_u_tmp_3_p.reinit(face);
-        phi_u_tmp_3_p.gather_evaluate(src[7], EvaluationFlags::values);
-        phi_u_tmp_3_m.reinit(face);
-        phi_u_tmp_3_m.gather_evaluate(src[7], EvaluationFlags::values);
-        phi_pres_tmp_3_p.reinit(face);
-        phi_pres_tmp_3_p.gather_evaluate(src[8], EvaluationFlags::values);
-        phi_pres_tmp_3_m.reinit(face);
-        phi_pres_tmp_3_m.gather_evaluate(src[8], EvaluationFlags::values);
-
-        phi_p.reinit(face);
         phi_m.reinit(face);
+        phi_p.reinit(face);
 
         /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus             = phi_p.get_normal_vector(q);
+        for(const unsigned q : phi_m.quadrature_point_indices()) {
+          const auto& n_minus = phi_m.normal_vector(q);
 
-          const auto& rho_old_p          = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m          = phi_rho_old_m.get_value(q);
-          const auto& u_old_p            = phi_u_old_p.get_value(q);
-          const auto& u_old_m            = phi_u_old_m.get_value(q);
-          const auto& avg_kinetic_old    = 0.5*(0.5*scalar_product(u_old_p, u_old_p)*rho_old_p*u_old_p +
-                                                0.5*scalar_product(u_old_m, u_old_m)*rho_old_m*u_old_m);
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux_num;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_rho_m.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_rho_p.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_u_m.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_u_p.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_pres_m.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+            phi_pres_p.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
 
-          const auto& pres_old_p         = phi_pres_old_p.get_value(q);
-          const auto& pres_old_m         = phi_pres_old_m.get_value(q);
-          const auto& E_old_p            = 1.0/(EquationData::Cp_Cv - 1.0)*pres_old_p/rho_old_p
-                                         + 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p);
-          const auto& E_old_m            = 1.0/(EquationData::Cp_Cv - 1.0)*pres_old_m/rho_old_m
-                                         + 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m);
-          const auto& avg_enthalpy_old   = 0.5*
-                                           (((E_old_p - 0.5*Ma*Ma*scalar_product(u_old_p, u_old_p))*rho_old_p + pres_old_p)*u_old_p +
-                                            ((E_old_m - 0.5*Ma*Ma*scalar_product(u_old_m, u_old_m))*rho_old_m + pres_old_m)*u_old_m);
+            const auto& rho_s_m  = phi_rho_m.get_value(q);
+            const auto& rho_s_p  = phi_rho_p.get_value(q);
+            const auto& u_s_m    = phi_u_m.get_value(q);
+            const auto& u_s_p    = phi_u_p.get_value(q);
+            const auto& pres_s_m = phi_pres_m.get_value(q);
+            const auto& pres_s_p = phi_pres_p.get_value(q);
 
-          const auto& lambda_old         = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                                    std::abs(scalar_product(u_old_m, n_plus)));
-          const auto& jump_rhoE_old      = rho_old_p*E_old_p - rho_old_m*E_old_m;
+            /*--- Compute the numerical flux ---*/
+            flux_num += b[s - 1]*dt*
+                        num_flux.numerical_flux_momentum_explicit(rho_s_m, u_s_m,
+                                                                  rho_s_p, u_s_p,
+                                                                  n_minus)
+                      + b_tilde[s - 1]*dt*
+                        num_flux.numerical_flux_momentum_implicit(pres_s_m,
+                                                                  pres_s_p,
+                                                                  n_minus);
+          }
 
-          const auto& rho_tmp_2_p        = phi_rho_tmp_2_p.get_value(q);
-          const auto& rho_tmp_2_m        = phi_rho_tmp_2_m.get_value(q);
-          const auto& u_tmp_2_p          = phi_u_tmp_2_p.get_value(q);
-          const auto& u_tmp_2_m          = phi_u_tmp_2_m.get_value(q);
-          const auto& avg_kinetic_tmp_2  = 0.5*(0.5*scalar_product(u_tmp_2_p, u_tmp_2_p)*rho_tmp_2_p*u_tmp_2_p +
-                                                0.5*scalar_product(u_tmp_2_m, u_tmp_2_m)*rho_tmp_2_m*u_tmp_2_m);
-
-          const auto& pres_tmp_2_p       = phi_pres_tmp_2_p.get_value(q);
-          const auto& pres_tmp_2_m       = phi_pres_tmp_2_m.get_value(q);
-          const auto& E_tmp_2_p          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_tmp_2_p/rho_tmp_2_p
-                                         + 0.5*Ma*Ma*scalar_product(u_tmp_2_p, u_tmp_2_p);
-          const auto& E_tmp_2_m          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_tmp_2_m/rho_tmp_2_m
-                                         + 0.5*Ma*Ma*scalar_product(u_tmp_2_m, u_tmp_2_m);
-          const auto& avg_enthalpy_tmp_2 = 0.5*
-                                           (((E_tmp_2_p - 0.5*Ma*Ma*scalar_product(u_tmp_2_p, u_tmp_2_p))*rho_tmp_2_p +
-                                              pres_tmp_2_p)*u_tmp_2_p +
-                                            ((E_tmp_2_m - 0.5*Ma*Ma*scalar_product(u_tmp_2_m, u_tmp_2_m))*rho_tmp_2_m +
-                                              pres_tmp_2_m)*u_tmp_2_m);
-
-          const auto& lambda_tmp_2       = std::max(std::abs(scalar_product(u_tmp_2_p, n_plus)),
-                                                    std::abs(scalar_product(u_tmp_2_m, n_plus)));
-          const auto& jump_rhoE_tmp_2    = rho_tmp_2_p*E_tmp_2_p - rho_tmp_2_m*E_tmp_2_m;
-
-          const auto& rho_tmp_3_p        = phi_rho_tmp_3_p.get_value(q);
-          const auto& rho_tmp_3_m        = phi_rho_tmp_3_m.get_value(q);
-          const auto& u_tmp_3_p          = phi_u_tmp_3_p.get_value(q);
-          const auto& u_tmp_3_m          = phi_u_tmp_3_m.get_value(q);
-          const auto& avg_kinetic_tmp_3  = 0.5*(0.5*scalar_product(u_tmp_3_p, u_tmp_3_p)*rho_tmp_3_p*u_tmp_3_p +
-                                                0.5*scalar_product(u_tmp_3_m, u_tmp_3_m)*rho_tmp_3_m*u_tmp_3_m);
-
-          const auto& pres_tmp_3_p       = phi_pres_tmp_3_p.get_value(q);
-          const auto& pres_tmp_3_m       = phi_pres_tmp_3_m.get_value(q);
-          const auto& E_tmp_3_p          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_tmp_3_p/rho_tmp_3_p
-                                         + 0.5*Ma*Ma*scalar_product(u_tmp_3_p, u_tmp_3_p);
-          const auto& E_tmp_3_m          = 1.0/(EquationData::Cp_Cv - 1.0)*pres_tmp_3_m/rho_tmp_3_m
-                                         + 0.5*Ma*Ma*scalar_product(u_tmp_3_m, u_tmp_3_m);
-          const auto& avg_enthalpy_tmp_3 = 0.5*
-                                           (((E_tmp_3_p - 0.5*Ma*Ma*scalar_product(u_tmp_3_p, u_tmp_3_p))*rho_tmp_3_p +
-                                              pres_tmp_3_p)*u_tmp_3_p +
-                                            ((E_tmp_3_m - 0.5*Ma*Ma*scalar_product(u_tmp_3_m, u_tmp_3_m))*rho_tmp_3_m +
-                                              pres_tmp_3_m)*u_tmp_3_m);
-
-          const auto& lambda_tmp_3       = std::max(std::abs(scalar_product(u_tmp_3_p, n_plus)),
-                                                    std::abs(scalar_product(u_tmp_3_m, n_plus)));
-          const auto& jump_rhoE_tmp_3    = rho_tmp_3_p*E_tmp_3_p - rho_tmp_3_m*E_tmp_3_m;
-
-          phi_p.submit_value(-b1*dt*Ma*Ma*scalar_product(avg_kinetic_old, n_plus)
-                             -b1*dt*scalar_product(avg_enthalpy_old, n_plus)
-                             -b1*dt*0.5*lambda_old*jump_rhoE_old
-                             -b2*dt*Ma*Ma*scalar_product(avg_kinetic_tmp_2, n_plus)
-                             -b2*dt*scalar_product(avg_enthalpy_tmp_2, n_plus)
-                             -b2*dt*0.5*lambda_tmp_2*jump_rhoE_tmp_2
-                             -b3*dt*Ma*Ma*scalar_product(avg_kinetic_tmp_3, n_plus)
-                             -b3*dt*scalar_product(avg_enthalpy_tmp_3, n_plus)
-                             -b3*dt*0.5*lambda_tmp_3*jump_rhoE_tmp_3, q);
-          phi_m.submit_value(b1*dt*Ma*Ma*scalar_product(avg_kinetic_old, n_plus) +
-                             b1*dt*scalar_product(avg_enthalpy_old, n_plus) +
-                             b1*dt*0.5*lambda_old*jump_rhoE_old +
-                             b2*dt*Ma*Ma*scalar_product(avg_kinetic_tmp_2, n_plus) +
-                             b2*dt*scalar_product(avg_enthalpy_tmp_2, n_plus) +
-                             b2*dt*0.5*lambda_tmp_2*jump_rhoE_tmp_2 +
-                             b3*dt*Ma*Ma*scalar_product(avg_kinetic_tmp_3, n_plus) +
-                             b3*dt*scalar_product(avg_enthalpy_tmp_3, n_plus) +
-                             b3*dt*0.5*lambda_tmp_3*jump_rhoE_tmp_3, q);
+          phi_m.submit_value(-flux_num, q);
+          phi_p.submit_value(flux_num, q);
         }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
+
         phi_m.integrate_scatter(EvaluationFlags::values, dst);
+        phi_p.integrate_scatter(EvaluationFlags::values, dst);
       }
     }
   }
 
-
-  // Put together all the previous steps for pressure
+  // Assemble rhs boundary term of the momentum equation
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  vmult_rhs_pressure(Vec& dst, const std::vector<Vec>& src) const {
-    for(unsigned int d = 0; d < src.size(); ++d) {
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_boundary_term_momentum(const MatrixFree<dim, Number>&       data,
+                                      Vec&                                 dst,
+                                      const std::vector<Vec>&              src,
+                                      const std::pair<unsigned, unsigned>& face_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
+      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
+      FEFaceEvaluation_u_boundary    phi(data, true, EquationData::U_INDEX_DOF, 1);
+      FEFaceEvaluation_pres_boundary phi_pres(data, true, EquationData::P_INDEX_DOF, 1);
+
+      /*--- Loop over all boundary faces ---*/
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_pres.reinit(face);
+
+        phi.reinit(face);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          const auto& n_minus = phi.normal_vector(q);
+
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux_num;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_pres.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+
+            const auto& pres_s   = phi_pres.get_value(q);
+            const auto& pres_s_D = pres_s;
+
+            /*--- Compute the numerical flux ---*/
+            flux_num += a_tilde[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_momentum_implicit(pres_s,
+                                                                  pres_s_D,
+                                                                  n_minus);
+          }
+
+          phi.submit_value(-flux_num, q);
+        }
+
+        phi.integrate_scatter(EvaluationFlags::values, dst);
+      }
+    }
+    /*--- Final update ---*/
+    else {
+      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
+      FEFaceEvaluation_u_boundary    phi(data, true, EquationData::U_INDEX_DOF, 1);
+      FEFaceEvaluation_pres_boundary phi_pres(data, true, EquationData::P_INDEX_DOF, 1);
+
+      /*--- Loop over all boundary faces ---*/
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_pres.reinit(face);
+
+        phi.reinit(face);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          const auto& n_minus = phi.normal_vector(q);
+
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux_num;
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_pres.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+
+            const auto& pres_s   = phi_pres.get_value(q);
+            const auto& pres_s_D = pres_s;
+
+            /*--- Compute the numerical flux ---*/
+            flux_num += b_tilde[s - 1]*dt*
+                        num_flux.numerical_flux_momentum_implicit(pres_s,
+                                                                  pres_s_D,
+                                                                  n_minus);
+          }
+
+          phi.submit_value(-flux_num, q);
+        }
+
+        phi.integrate_scatter(EvaluationFlags::values, dst);
+      }
+    }
+  }
+
+  // Put together all the previous steps for the momentum equation
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  vmult_rhs_momentum(Vec& dst, const std::vector<Vec>& src) const {
+    for(unsigned d = 0; d < src.size(); ++d) {
       src[d].update_ghost_values();
     }
 
-    this->data->loop(&EULEROperator::assemble_rhs_cell_term_pressure,
-                     &EULEROperator::assemble_rhs_face_term_pressure,
-                     &EULEROperator::assemble_rhs_boundary_term_pressure,
+    this->data->loop(&EULEROperator::assemble_rhs_cell_term_momentum,
+                     &EULEROperator::assemble_rhs_face_term_momentum,
+                     &EULEROperator::assemble_rhs_boundary_term_momentum,
                      this, dst, src, true,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified);
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values,
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values);
   }
 
-
-  // Assemble cell term for the contribution due to internal energy
+  // Assemble cell term for the velocity update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_cell_term_internal_energy(const MatrixFree<dim, Number>&               data,
-                                     Vec&                                         dst,
-                                     const Vec&                                   src,
-                                     const std::pair<unsigned int, unsigned int>& cell_range) const {
-    FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number> phi(data, 1);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_cell_term_velocity(const MatrixFree<dim, Number>&       data,
+                              Vec&                                 dst,
+                              const Vec&                           src,
+                              const std::pair<unsigned, unsigned>& cell_range) const {
+    /*--- We first start by declaring the suitable instances to read also available quantities.
+          Since here we have just one 'src' vector, but we also need to deal with the current density,
+          we employ the auxiliary vector 'rho_for_fixed' where we setted this information ---*/
+    FEEvaluation<dim, fe_degree_u, fe_degree_u + 1, dim, Number> phi(data, EquationData::U_INDEX_DOF, 2);
+    FEEvaluation<dim, fe_degree_rho, fe_degree_u + 1, 1, Number> phi_rho_for_fixed(data, EquationData::RHO_INDEX_DOF, 2);
 
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+    MatrixFreeOperators::CellwiseInverseMassMatrix<dim, fe_degree_u, dim, Number> inverse(phi);
+
+    /*--- Loop over all cells ---*/
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi_rho_for_fixed.reinit(cell);
+      phi_rho_for_fixed.gather_evaluate(rho_for_fixed, EvaluationFlags::values);
+
       phi.reinit(cell);
-      phi.gather_evaluate(src, EvaluationFlags::values);
+      phi.read_dof_values(src);
 
-      for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-        /*--- For an ideal gas the part associated to the internal energy for a pressure based
-              is just a modification of the mass matrix ---*/
-        phi.submit_value(1.0/(EquationData::Cp_Cv - 1.0)*phi.get_value(q), q);
+      AlignedVector<VectorizedArray<Number>> inverse_jxw(phi.n_q_points);
+      inverse.fill_inverse_JxW_values(inverse_jxw);
+
+      /*--- Loop over all quadrature points to fill the inverse of the coefficient ---*/
+      for(const unsigned q : phi.quadrature_point_indices()) {
+        inverse_jxw[q] *= 1.0/phi_rho_for_fixed.get_value(q);
+      }
+
+      inverse.apply(inverse_jxw, dim,
+                    phi.begin_dof_values(),
+                    phi.begin_dof_values());
+
+      phi.set_dof_values(dst);
+    }
+  }
+
+  // Assemble cell term for the pressure
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_cell_term_pressure(const MatrixFree<dim, Number>&       data,
+                              Vec&                                 dst,
+                              const Vec&                           src,
+                              const std::pair<unsigned, unsigned>& cell_range) const {
+    /*--- We first start by declaring the suitable instances to read quantities. This operator we are going to implement
+          represents a rectangular matrix (we start from the pressure FE space and we end up with the velocity FE space).
+          This is the reason of the distinction between 'phi' and 'phi_src'. ---*/
+    FEEvaluation_u    phi(data, EquationData::U_INDEX_DOF);
+    FEEvaluation_pres phi_src(data, EquationData::P_INDEX_DOF);
+
+    /*--- Loop over all cells. ---*/
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi_src.reinit(cell);
+      phi_src.gather_evaluate(src, EvaluationFlags::values);
+
+      phi.reinit(cell);
+
+      for(const unsigned q : phi.quadrature_point_indices()) {
+        /*--- Here we are testing against the divergence of the test function and, therefore, we employ 'submit_divergence'. ---*/
+        phi.submit_divergence(-a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Ma2*phi_src.get_value(q)), q);
+      }
+
+      phi.integrate_scatter(EvaluationFlags::gradients, dst);
+    }
+  }
+
+  // Assemble face term for the pressure
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_face_term_pressure(const MatrixFree<dim, Number>&       data,
+                              Vec&                                 dst,
+                              const Vec&                           src,
+                              const std::pair<unsigned, unsigned>& face_range) const {
+    FEFaceEvaluation_u    phi_m(data, true, EquationData::U_INDEX_DOF),
+                          phi_p(data, false, EquationData::U_INDEX_DOF);
+    FEFaceEvaluation_pres phi_src_m(data, true, EquationData::P_INDEX_DOF),
+                          phi_src_p(data, false, EquationData::P_INDEX_DOF);
+
+    /*--- Loop over all internal faces ---*/
+    for(unsigned face = face_range.first; face < face_range.second; ++face) {
+      phi_src_m.reinit(face);
+      phi_src_m.gather_evaluate(src, EvaluationFlags::values);
+      phi_src_p.reinit(face);
+      phi_src_p.gather_evaluate(src, EvaluationFlags::values);
+
+      phi_m.reinit(face);
+      phi_p.reinit(face);
+
+      /*--- Loop over all quadrature points ---*/
+      for(const unsigned q : phi_m.quadrature_point_indices()) {
+        const auto& n_minus  = phi_m.normal_vector(q);
+
+        const auto& avg_term = static_cast<Number>(0.5)*
+                               (phi_src_m.get_value(q) +
+                                phi_src_p.get_value(q));
+
+        const auto& flux_num = a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                               (inv_Ma2*avg_term*n_minus);
+
+        phi_m.submit_value(flux_num, q);
+        phi_p.submit_value(-flux_num, q);
+      }
+
+      phi_m.integrate_scatter(EvaluationFlags::values, dst);
+      phi_p.integrate_scatter(EvaluationFlags::values, dst);
+    }
+  }
+
+  // Assemble boundary term for the pressure
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_boundary_term_pressure(const MatrixFree<dim, Number>&               data,
+                                  Vec&                                         dst,
+                                  const Vec&                                   src,
+                                  const std::pair<unsigned, unsigned>& face_range) const {
+    FEFaceEvaluation_u_boundary    phi(data, true, EquationData::U_INDEX_DOF, 1);
+    FEFaceEvaluation_pres_boundary phi_src(data, true, EquationData::P_INDEX_DOF, 1);
+
+    /*--- Loop over all boundary faces ---*/
+    for(unsigned face = face_range.first; face < face_range.second; ++face) {
+      phi_src.reinit(face);
+      phi_src.gather_evaluate(src, EvaluationFlags::values);
+
+      phi.reinit(face);
+
+      /*--- Loop over all quadrature points ---*/
+      for(const unsigned q : phi.quadrature_point_indices()) {
+        const auto& n_minus      = phi.normal_vector(q);
+
+        const auto& pres_fixed_D = phi_src.get_value(q);
+
+        const auto& avg_term     = static_cast<Number>(0.5)*
+                                   (phi_src.get_value(q) +
+                                    pres_fixed_D);
+
+        phi.submit_value(a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                         (inv_Ma2*avg_term*n_minus), q);
       }
 
       phi.integrate_scatter(EvaluationFlags::values, dst);
@@ -1408,27 +1325,439 @@ namespace Atmospheric_Flow {
   }
 
 
+  //////////////////////////////////////////////////////////////
+  /*---- ASSEMBLING LINEAR AND BILINEAR FORMS FOR THE ENERGY EQUATION ---*/
+  /////////////////////////////////////////////////////////////
+
+  // Assemble rhs cell term of the energy equation
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_cell_term_energy(const MatrixFree<dim, Number>&       data,
+                                Vec&                                 dst,
+                                const std::vector<Vec>&              src,
+                                const std::pair<unsigned, unsigned>& cell_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
+      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
+      FEEvaluation_pres              phi(data, EquationData::P_INDEX_DOF);
+      std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
+      std::vector<FEEvaluation_u>    phi_u(IMEX_stage, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
+      std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+
+      /*--- Loop over all cells ---*/
+      for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+        for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+          phi_rho[s - 1].reinit(cell);
+          phi_rho[s - 1].gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+          phi_u[s - 1].reinit(cell);
+          phi_u[s - 1].gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+          phi_pres[s - 1].reinit(cell);
+          phi_pres[s - 1].gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+        }
+        phi_rho.back().reinit(cell);
+        phi_rho.back().gather_evaluate(src[3*(IMEX_stage - 1)], EvaluationFlags::values);
+        phi_u.back().reinit(cell);
+        phi_u.back().gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
+
+        phi.reinit(cell);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          /*--- Compute the quantities at the previous step (always necessary).
+                Notice that this is ok because of ESDIRK method. ---*/
+          const auto& rho_old  = phi_rho.front().get_value(q);
+          const auto& u_old    = phi_u.front().get_value(q);
+          const auto& pres_old = phi_pres.front().get_value(q);
+          const auto& rhoE_old = inv_gamma_m1*pres_old
+                               + rho_old*(0.5*Ma2*scalar_product(u_old, u_old));
+
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux;
+          VectorizedArray<Number> gravity_term = make_vectorized_array<Number>(0.0);
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            const auto& rho_s  = phi_rho[s - 1].get_value(q);
+            const auto& u_s    = phi_u[s - 1].get_value(q);
+            const auto& pres_s = phi_pres[s - 1].get_value(q);
+
+            flux += a[IMEX_stage - 1][s - 1]*dt*
+                    (rho_s*(static_cast<Number>(0.5)*Ma2*scalar_product(u_s, u_s))*u_s)
+                  + a_tilde[IMEX_stage - 1][s - 1]*dt*
+                    (inv_Gamma*(pres_s*u_s));
+
+            gravity_term += a_tilde[IMEX_stage - 1][s - 1]*dt*
+                            (Ma2_ov_Fr2*rho_s*u_s[dim - 1]);
+          }
+
+          /*--- We assign to the rhs the contribution due to kinetic energy in the fixed point loop.
+                Add last contribution of the gravity term (implicit treatment) ---*/
+          const auto& rho_for_fixed_s = phi_rho.back().get_value(q);
+          const auto& u_fixed_s       = phi_u.back().get_value(q);
+          gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                          (Ma2_ov_Fr2*rho_for_fixed_s*u_fixed_s[dim - 1]);
+
+          phi.submit_value(rhoE_old -
+                           rho_for_fixed_s*(static_cast<Number>(0.5)*Ma2*scalar_product(u_fixed_s, u_fixed_s)) -
+                           gravity_term, q);
+          phi.submit_gradient(flux, q);
+        }
+
+        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
+      }
+    }
+    else {
+      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
+      FEEvaluation_pres              phi(data, EquationData::P_INDEX_DOF);
+      std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
+      std::vector<FEEvaluation_u>    phi_u(IMEX_stage, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
+      std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+
+      /*--- Loop over all cells ---*/
+      for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+        for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+          phi_rho[s - 1].reinit(cell);
+          phi_rho[s - 1].gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+          phi_u[s - 1].reinit(cell);
+          phi_u[s - 1].gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+          phi_pres[s - 1].reinit(cell);
+          phi_pres[s - 1].gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+        }
+        phi_rho.back().reinit(cell);
+        phi_rho.back().gather_evaluate(src[3*(IMEX_stage - 1)], EvaluationFlags::values);
+        phi_u.back().reinit(cell);
+        phi_u.back().gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
+
+        phi.reinit(cell);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          /*--- Compute the quantities at the previous step (always necessary).
+                Notice that this is ok because of ESDIRK method. ---*/
+          const auto& rho_old  = phi_rho.front().get_value(q);
+          const auto& u_old    = phi_u.front().get_value(q);
+          const auto& pres_old = phi_pres.front().get_value(q);
+          const auto& rhoE_old = inv_gamma_m1*pres_old
+                               + rho_old*(0.5*Ma2*scalar_product(u_old, u_old));
+
+          /*--- Compute the quantities at the previous stages ---*/
+          Tensor<1, dim, VectorizedArray<Number>> flux;
+          VectorizedArray<Number> gravity_term = make_vectorized_array<Number>(0.0);
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            const auto& rho_s  = phi_rho[s - 1].get_value(q);
+            const auto& u_s    = phi_u[s - 1].get_value(q);
+            const auto& pres_s = phi_pres[s - 1].get_value(q);
+
+            flux += b[s - 1]*dt*
+                    (rho_s*(static_cast<Number>(0.5)*Ma2*scalar_product(u_s, u_s))*u_s)
+                  + b_tilde[s - 1]*dt*
+                    (inv_Gamma*(pres_s*u_s));
+
+            gravity_term += b_tilde[s - 1]*dt*
+                            (Ma2_ov_Fr2*rho_s*u_s[dim - 1]);
+          }
+
+          /*--- We assign to the rhs the contribution due to the (already updated) kinetic energy ---*/
+          const auto& rho_curr = phi_rho.back().get_value(q);
+          const auto& u_curr   = phi_u.back().get_value(q);
+
+          phi.submit_value(rhoE_old -
+                           rho_curr*(static_cast<Number>(0.5)*Ma2*scalar_product(u_curr, u_curr)) -
+                           gravity_term, q);
+          phi.submit_gradient(flux, q);
+        }
+
+        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
+      }
+    }
+  }
+
+  // Assemble rhs face term of the energy equation
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_rhs_face_term_energy(const MatrixFree<dim, Number>&       data,
+                                Vec&                                 dst,
+                                const std::vector<Vec>&              src,
+                                const std::pair<unsigned, unsigned>& face_range) const {
+    /*--- Intermediate stages ---*/
+    if(IMEX_stage <= n_stages) {
+      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
+      FEFaceEvaluation_pres phi_m(data, true, EquationData::P_INDEX_DOF),
+                            phi_p(data, false, EquationData::P_INDEX_DOF),
+                            phi_pres_m(data, true, EquationData::P_INDEX_DOF),
+                            phi_pres_p(data, false, EquationData::P_INDEX_DOF);
+      FEFaceEvaluation_u    phi_u_m(data, true, EquationData::U_INDEX_DOF),
+                            phi_u_p(data, false, EquationData::U_INDEX_DOF);
+      FEFaceEvaluation_rho  phi_rho_m(data, true, EquationData::RHO_INDEX_DOF),
+                            phi_rho_p(data, false, EquationData::RHO_INDEX_DOF);
+
+      /*--- Loop over all internal faces ---*/
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_rho_m.reinit(face);
+        phi_rho_p.reinit(face);
+        phi_u_m.reinit(face);
+        phi_u_p.reinit(face);
+        phi_pres_m.reinit(face);
+        phi_pres_p.reinit(face);
+
+        phi_m.reinit(face);
+        phi_p.reinit(face);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi_m.quadrature_point_indices()) {
+          const auto& n_minus = phi_m.normal_vector(q);
+
+          /*--- Compute the quantities at the previous stages ---*/
+          VectorizedArray<Number> flux_num = make_vectorized_array<Number>(0.0);
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_rho_m.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_rho_p.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_u_m.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_u_p.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_pres_m.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+            phi_pres_p.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+
+            const auto& rho_s_m  = phi_rho_m.get_value(q);
+            const auto& rho_s_p  = phi_rho_p.get_value(q);
+            const auto& u_s_m    = phi_u_m.get_value(q);
+            const auto& u_s_p    = phi_u_p.get_value(q);
+            const auto& pres_s_m = phi_pres_m.get_value(q);
+            const auto& pres_s_p = phi_pres_p.get_value(q);
+
+            /*--- Compute the numerical flux ---*/
+            flux_num += a[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_energy_explicit(rho_s_m, u_s_m,
+                                                                rho_s_p, u_s_p,
+                                                                n_minus)
+                      + a_tilde[IMEX_stage - 1][s - 1]*dt*
+                        num_flux.numerical_flux_energy_implicit(u_s_m, pres_s_m,
+                                                                u_s_p, pres_s_p,
+                                                                n_minus);
+          }
+
+          /*--- Compute the contribution at the current stage ---*/
+          phi_u_m.gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
+          phi_u_p.gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
+          phi_pres_m.gather_evaluate(src[3*(IMEX_stage - 1) + 2], EvaluationFlags::values);
+          phi_pres_p.gather_evaluate(src[3*(IMEX_stage - 1) + 2], EvaluationFlags::values);
+
+          const auto& u_fixed_s_m    = phi_u_m.get_value(q);
+          const auto& u_fixed_s_p    = phi_u_p.get_value(q);
+          const auto& pres_fixed_s_m = phi_pres_m.get_value(q);
+          const auto& pres_fixed_s_p = phi_pres_p.get_value(q);
+
+          /*--- Compute the stabilization term ---*/
+          const auto& lambda_fixed_s     = num_flux.compute_lambda(u_fixed_s_m,
+                                                                   u_fixed_s_p,
+                                                                   n_minus);
+          const auto& jump_rho_e_fixed_s = inv_gamma_m1*(pres_fixed_s_m - pres_fixed_s_p);
+
+          flux_num += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                      (0.5*lambda_fixed_s*jump_rho_e_fixed_s);
+
+          phi_m.submit_value(-flux_num, q);
+          phi_p.submit_value(flux_num, q);
+        }
+
+        phi_m.integrate_scatter(EvaluationFlags::values, dst);
+        phi_p.integrate_scatter(EvaluationFlags::values, dst);
+      }
+    }
+    /*--- Final update ---*/
+    else {
+      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
+      FEFaceEvaluation_pres phi_m(data, true, EquationData::P_INDEX_DOF),
+                            phi_p(data, false, EquationData::P_INDEX_DOF),
+                            phi_pres_m(data, true, EquationData::P_INDEX_DOF),
+                            phi_pres_p(data, false, EquationData::P_INDEX_DOF);
+      FEFaceEvaluation_u    phi_u_m(data, true, EquationData::U_INDEX_DOF),
+                            phi_u_p(data, false, EquationData::U_INDEX_DOF);
+      FEFaceEvaluation_rho  phi_rho_m(data, true, EquationData::RHO_INDEX_DOF),
+                            phi_rho_p(data, false, EquationData::RHO_INDEX_DOF);
+
+      /*--- Loop over all internal faces ---*/
+      for(unsigned face = face_range.first; face < face_range.second; ++face) {
+        phi_rho_m.reinit(face);
+        phi_rho_p.reinit(face);
+        phi_u_m.reinit(face);
+        phi_u_p.reinit(face);
+        phi_pres_m.reinit(face);
+        phi_pres_p.reinit(face);
+
+        phi_m.reinit(face);
+        phi_p.reinit(face);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi_m.quadrature_point_indices()) {
+          const auto& n_minus = phi_m.normal_vector(q);
+
+          /*--- Compute the quantities at the previous stages ---*/
+          VectorizedArray<Number> flux_num = make_vectorized_array<Number>(0.0);
+          for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
+            /*--- Retrieve the useful fields ---*/
+            phi_rho_m.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_rho_p.gather_evaluate(src[3*(s-1)], EvaluationFlags::values);
+            phi_u_m.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_u_p.gather_evaluate(src[3*(s-1) + 1], EvaluationFlags::values);
+            phi_pres_m.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+            phi_pres_p.gather_evaluate(src[3*(s-1) + 2], EvaluationFlags::values);
+
+            const auto& rho_s_m  = phi_rho_m.get_value(q);
+            const auto& rho_s_p  = phi_rho_p.get_value(q);
+            const auto& u_s_m    = phi_u_m.get_value(q);
+            const auto& u_s_p    = phi_u_p.get_value(q);
+            const auto& pres_s_m = phi_pres_m.get_value(q);
+            const auto& pres_s_p = phi_pres_p.get_value(q);
+
+            /*--- Compute the numerical flux ---*/
+            flux_num += b[s - 1]*dt*
+                        num_flux.numerical_flux_energy_explicit(rho_s_m, u_s_m,
+                                                                rho_s_p, u_s_p,
+                                                                n_minus)
+                      + b_tilde[s - 1]*dt*
+                        num_flux.numerical_flux_energy_implicit(u_s_m, pres_s_m,
+                                                                u_s_p, pres_s_p,
+                                                                n_minus);
+          }
+
+          phi_m.submit_value(-flux_num, q);
+          phi_p.submit_value(flux_num, q);
+        }
+
+        phi_m.integrate_scatter(EvaluationFlags::values, dst);
+        phi_p.integrate_scatter(EvaluationFlags::values, dst);
+      }
+    }
+  }
+
+  // Put together all the previous steps for the energy equation
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  vmult_rhs_energy(Vec& dst, const std::vector<Vec>& src) const {
+    for(unsigned d = 0; d < src.size(); ++d) {
+      src[d].update_ghost_values();
+    }
+
+    this->data->loop(&EULEROperator::assemble_rhs_cell_term_energy,
+                     &EULEROperator::assemble_rhs_face_term_energy,
+                     &EULEROperator::assemble_rhs_boundary_term_energy,
+                     this, dst, src, true,
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values,
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values);
+  }
+
+  // Assemble cell term for the contribution due to internal energy
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_inverse_cell_term_internal_energy(const MatrixFree<dim, Number>&       data,
+                                             Vec&                                 dst,
+                                             const Vec&                           src,
+                                             const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation<dim, fe_degree_p, fe_degree_p + 1, 1, Number> phi(data, EquationData::P_INDEX_DOF, 4);
+
+    MatrixFreeOperators::CellwiseInverseMassMatrix<dim, fe_degree_p, 1, Number> inverse(phi);
+
+    /*--- Loop over all cells ---*/
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi.reinit(cell);
+      phi.read_dof_values(src);
+
+      AlignedVector<VectorizedArray<Number>> inverse_jxw(phi.n_q_points);
+      inverse.fill_inverse_JxW_values(inverse_jxw);
+
+      /*--- Loop over all quadrature points to fill the inverse of the coefficient ---*/
+      for(const unsigned q : phi.quadrature_point_indices()) {
+        inverse_jxw[q] *= gamma_m1;
+      }
+
+      inverse.apply(inverse_jxw, 1,
+                    phi.begin_dof_values(),
+                    phi.begin_dof_values());
+
+      phi.set_dof_values(dst);
+    }
+  }
+
+  // Assemble cell term for the contribution due to internal energy
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_cell_term_internal_energy(const MatrixFree<dim, Number>&               data,
+                                     Vec&                                         dst,
+                                     const Vec&                                   src,
+                                     const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation<dim, fe_degree_p, fe_degree_p + 1, 1, Number> phi(data, EquationData::P_INDEX_DOF, 4);
+
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi.reinit(cell);
+      phi.gather_evaluate(src, EvaluationFlags::values);
+
+      for(const unsigned q : phi.quadrature_point_indices()) {
+        /*--- For an ideal gas the part associated to the internal energy for a pressure based
+              is just a modification of the mass matrix ---*/
+        phi.submit_value(inv_gamma_m1*phi.get_value(q), q);
+      }
+
+      phi.integrate_scatter(EvaluationFlags::values, dst);
+    }
+  }
+
   // Assemble cell term for the contribution due to enthalpy
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   assemble_cell_term_enthalpy(const MatrixFree<dim, Number>&               data,
                               Vec&                                         dst,
                               const Vec&                                   src,
-                              const std::pair<unsigned int, unsigned int>& cell_range) const {
+                              const std::pair<unsigned, unsigned>& cell_range) const {
     /*--- We first start by declaring the suitable instances to read also available quantities.
           Since here we have just one 'src' vector, but we also need to deal with the current pressure
-           in the fixed point loop, we employ the auxiliary vector 'pres_fixed' where we setted this information ---*/
-    FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi(data, 1),
-                                                                 phi_pres_fixed(data, 1);
-    FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_src(data, 0);
-
-    const double coeff = (HYPERBOLIC_stage == 1) ? a22_tilde : a33_tilde;
+          in the fixed point loop, we employ the auxiliary vector 'pres_fixed' where we setted this information ---*/
+    FEEvaluation_pres phi(data, EquationData::P_INDEX_DOF),
+                      phi_pres_fixed(data, EquationData::P_INDEX_DOF);
+    FEEvaluation_u    phi_src(data, EquationData::U_INDEX_DOF);
 
     /*--- Loop over all cells ---*/
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
       phi_pres_fixed.reinit(cell);
       phi_pres_fixed.gather_evaluate(pres_fixed, EvaluationFlags::values);
 
@@ -1438,991 +1767,152 @@ namespace Atmospheric_Flow {
       phi.reinit(cell);
 
       /*--- loop over all quadrature points ---*/
-      for(unsigned int q = 0; q < phi.n_q_points; ++q) {
+      for(const unsigned q : phi.quadrature_point_indices()) {
         const auto& pres_fixed = phi_pres_fixed.get_value(q);
 
-        phi.submit_gradient(-coeff*dt*EquationData::Cp_Cv/(EquationData::Cp_Cv - 1.0)*pres_fixed*phi_src.get_value(q), q);
+        phi.submit_gradient(-a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                            (inv_Gamma*(pres_fixed*phi_src.get_value(q))), q);
       }
+
       phi.integrate_scatter(EvaluationFlags::gradients, dst);
     }
   }
-
 
   // Assemble face term for the contribution due to enthalpy
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_face_term_enthalpy(const MatrixFree<dim, Number>&               data,
-                              Vec&                                         dst,
-                              const Vec&                                   src,
-                              const std::pair<unsigned int, unsigned int>& face_range) const {
-    FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_p(data, true, 1),
-                                                                     phi_m(data, false, 1),
-                                                                     phi_pres_fixed_p(data, true, 1),
-                                                                     phi_pres_fixed_m(data, false, 1);
-    FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_src_p(data, true, 0),
-                                                                     phi_src_m(data, false, 0);
-
-    /*--- This term changes between second and third stage of the IMEX scheme, but its structure not, so we do not need
-          to explicitly distinguish the two cases as done for the rhs. ---*/
-    const double coeff = (HYPERBOLIC_stage == 1) ? a22_tilde : a33_tilde;
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_face_term_enthalpy(const MatrixFree<dim, Number>&       data,
+                              Vec&                                 dst,
+                              const Vec&                           src,
+                              const std::pair<unsigned, unsigned>& face_range) const {
+    FEFaceEvaluation_pres phi_m(data, true, EquationData::P_INDEX_DOF),
+                          phi_p(data, false, EquationData::P_INDEX_DOF),
+                          phi_pres_fixed_m(data, true, EquationData::P_INDEX_DOF),
+                          phi_pres_fixed_p(data, false, EquationData::P_INDEX_DOF);
+    FEFaceEvaluation_u    phi_src_m(data, true, EquationData::U_INDEX_DOF),
+                          phi_src_p(data, false, EquationData::U_INDEX_DOF);
 
     /*--- Loop over all faces ---*/
-    for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-      phi_pres_fixed_p.reinit(face);
-      phi_pres_fixed_p.gather_evaluate(pres_fixed, EvaluationFlags::values);
+    for(unsigned face = face_range.first; face < face_range.second; ++face) {
       phi_pres_fixed_m.reinit(face);
       phi_pres_fixed_m.gather_evaluate(pres_fixed, EvaluationFlags::values);
+      phi_pres_fixed_p.reinit(face);
+      phi_pres_fixed_p.gather_evaluate(pres_fixed, EvaluationFlags::values);
 
-      phi_src_p.reinit(face);
-      phi_src_p.gather_evaluate(src, EvaluationFlags::values);
       phi_src_m.reinit(face);
       phi_src_m.gather_evaluate(src, EvaluationFlags::values);
+      phi_src_p.reinit(face);
+      phi_src_p.gather_evaluate(src, EvaluationFlags::values);
 
-      phi_p.reinit(face);
       phi_m.reinit(face);
+      phi_p.reinit(face);
 
       /*--- Loop over all quadrature points ---*/
-      for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-        const auto& n_plus            = phi_p.get_normal_vector(q);
+      for(const unsigned q : phi_m.quadrature_point_indices()) {
+        const auto& n_minus           = phi_m.normal_vector(q);
 
-        const auto& pres_fixed_p      = phi_pres_fixed_p.get_value(q);
         const auto& pres_fixed_m      = phi_pres_fixed_m.get_value(q);
+        const auto& pres_fixed_p      = phi_pres_fixed_p.get_value(q);
 
-        const auto& avg_flux_enthalpy = 0.5*EquationData::Cp_Cv/(EquationData::Cp_Cv - 1.0)*
-                                        (pres_fixed_p*phi_src_p.get_value(q) + pres_fixed_m*phi_src_m.get_value(q));
+        const auto& avg_flux_enthalpy = static_cast<Number>(0.5)*inv_Gamma*
+                                        (pres_fixed_m*phi_src_m.get_value(q) +
+                                         pres_fixed_p*phi_src_p.get_value(q));
 
-        const auto& lambda_fixed      = std::max(std::abs(scalar_product(phi_src_p.get_value(q), n_plus)),
-                                                 std::abs(scalar_product(phi_src_m.get_value(q), n_plus)));
-        const auto& jump_rho_e_fixed  = 1.0/(EquationData::Cp_Cv - 1.0)*(pres_fixed_p - pres_fixed_m);
+        const auto& flux_num          = a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                                        scalar_product(avg_flux_enthalpy, n_minus);
 
-        phi_p.submit_value(coeff*dt*(scalar_product(avg_flux_enthalpy, n_plus) + 0.5*lambda_fixed*jump_rho_e_fixed), q);
-        phi_m.submit_value(-coeff*dt*(scalar_product(avg_flux_enthalpy, n_plus) + 0.5*lambda_fixed*jump_rho_e_fixed), q);
+        phi_m.submit_value(flux_num, q);
+        phi_p.submit_value(-flux_num, q);
       }
-      phi_p.integrate_scatter(EvaluationFlags::values, dst);
+
       phi_m.integrate_scatter(EvaluationFlags::values, dst);
-    }
-  }
-
-
-  // Assemble cell term for the pressure
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_cell_term_pressure(const MatrixFree<dim, Number>&               data,
-                              Vec&                                         dst,
-                              const Vec&                                   src,
-                              const std::pair<unsigned int, unsigned int>& cell_range) const {
-    /*--- We first start by declaring the suitable instances to read quantities. This operator we are going to implement
-          represents a rectangular matrix (we start from the pressure FE space and we end up with the velocity FE space).
-          This is the reason of the distinction between 'phi' and 'phi_src'. ---*/
-    FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, 0);
-    FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_src(data, 1);
-
-    const double coeff = (HYPERBOLIC_stage == 1) ? a22_tilde : a33_tilde;
-
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-      phi_src.reinit(cell);
-      phi_src.gather_evaluate(src, EvaluationFlags::values);
-
-      phi.reinit(cell);
-
-      for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-        /*--- Here we are testing against the divergence of the test function and, therefore, we employ 'submit_divergence'. ---*/
-        phi.submit_divergence(-coeff*dt/(Ma*Ma)*phi_src.get_value(q), q);
-      }
-      phi.integrate_scatter(EvaluationFlags::gradients, dst);
-    }
-  }
-
-
-  // Assemble face term for the pressure
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_face_term_pressure(const MatrixFree<dim, Number>&               data,
-                              Vec&                                         dst,
-                              const Vec&                                   src,
-                              const std::pair<unsigned int, unsigned int>& face_range) const {
-    FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_p(data, true, 0),
-                                                                     phi_m(data, false, 0);
-    FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_src_p(data, true, 1),
-                                                                     phi_src_m(data, false, 1);
-
-    const double coeff = (HYPERBOLIC_stage == 1) ? a22_tilde : a33_tilde;
-
-    /*--- Loop over all internal faces ---*/
-    for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-      phi_src_p.reinit(face);
-      phi_src_p.gather_evaluate(src, EvaluationFlags::values);
-      phi_src_m.reinit(face);
-      phi_src_m.gather_evaluate(src, EvaluationFlags::values);
-
-      phi_p.reinit(face);
-      phi_m.reinit(face);
-
-      /*--- Loop over all quadrature points ---*/
-      for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-        const auto& n_plus   = phi_p.get_normal_vector(q);
-
-        const auto& avg_term = 0.5*(phi_src_p.get_value(q) + phi_src_m.get_value(q));
-
-        phi_p.submit_value(coeff*dt/(Ma*Ma)*avg_term*n_plus, q);
-        phi_m.submit_value(-coeff*dt/(Ma*Ma)*avg_term*n_plus, q);
-      }
       phi_p.integrate_scatter(EvaluationFlags::values, dst);
-      phi_m.integrate_scatter(EvaluationFlags::values, dst);
     }
   }
 
 
-  // Assemble boundary term for the pressure
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_boundary_term_pressure(const MatrixFree<dim, Number>&               data,
-                                  Vec&                                         dst,
-                                  const Vec&                                   src,
-                                  const std::pair<unsigned int, unsigned int>& face_range) const {
-    FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, true, 0);
-    FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_src(data, true, 1);
-
-    const double coeff = (HYPERBOLIC_stage == 1) ? a22_tilde : a33_tilde;
-
-    /*--- Loop over all boundary faces ---*/
-    for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-      phi_src.reinit(face);
-      phi_src.gather_evaluate(src, EvaluationFlags::values);
-
-      phi.reinit(face);
-
-      /*--- Loop over all quadrature points ---*/
-      for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-        const auto& n_plus       = phi.get_normal_vector(q);
-
-        const auto& pres_fixed_D = phi_src.get_value(q);
-
-        phi.submit_value(coeff*dt/(Ma*Ma)*0.5*(phi_src.get_value(q) + pres_fixed_D)*n_plus, q);
-      }
-      phi.integrate_scatter(EvaluationFlags::values, dst);
-    }
-  }
-
-
-  // Assemble rhs cell term for the velocity update
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_cell_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                         Vec&                                         dst,
-                                         const std::vector<Vec>&                      src,
-                                         const std::pair<unsigned int, unsigned int>& cell_range) const {
-    if(HYPERBOLIC_stage == 1) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, 0),
-                                                                   phi_u_old(data, 0);
-      FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old(data, 1);
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2);
-
-      /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old.reinit(cell);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-
-        phi.reinit(cell);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old            = phi_rho_old.get_value(q);
-          const auto& u_old              = phi_u_old.get_value(q);
-          const auto& pres_old           = phi_pres_old.get_value(q);
-
-          const auto& tensor_product_u_n = outer_product(u_old, u_old);
-          /*--- For the sake of compatibility, since after integration by parts, the pressure gradient
-                would be tested against the divergence of the test function. This is equaivalent to test a diagonal matrix
-                with diagonal entries equal to the pressure itself agains the gradient of the test function. ---*/
-          auto p_n_times_identity        = tensor_product_u_n;
-          p_n_times_identity = 0;
-          for(unsigned int d = 0; d < dim; ++d) {
-            p_n_times_identity[d][d] = pres_old;
-          }
-
-          const auto& rho_tmp_2          = phi_rho_tmp_2.get_value(q);
-
-          /*--- Compute the unit normal vecotr for gravity, which for spherical geoemetry is radial and therefore space dependent ---*/
-          Tensor<1, dim, VectorizedArray<Number>> e_r;
-          const auto& point_vectorized = phi.quadrature_point(q);
-          Point<dim> point;
-          for(unsigned int v = 0; v < VectorizedArray<Number>::size(); ++v) {
-            for(unsigned int d = 0; d < dim; ++d) {
-              point[d] = point_vectorized[d][v];
-            }
-          }
-          const double radius  = std::sqrt(point[0]*point[0] + point[1]*point[1] + point[2]*point[2]);
-          const double phi_lat = std::asin(point[2]/radius);
-          const double lambda  = std::atan2(point[1], point[0]);
-          e_r[0] = make_vectorized_array<Number>(std::cos(phi_lat)*std::cos(lambda));
-          e_r[1] = make_vectorized_array<Number>(std::cos(phi_lat)*std::sin(lambda));
-          e_r[2] = make_vectorized_array<Number>(std::sin(phi_lat));
-
-          phi.submit_value(rho_old*u_old -
-                           a21_tilde*dt/(Fr*Fr)*rho_old*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           a22_tilde*dt/(Fr*Fr)*rho_tmp_2*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref), q);
-          phi.submit_gradient(a21*dt*rho_old*tensor_product_u_n + a21_tilde*dt/(Ma*Ma)*p_n_times_identity, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
-      }
-    }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, 0),
-                                                                   phi_u_old(data, 0),
-                                                                   phi_u_tmp_2(data, 0);
-      FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old(data, 1),
-                                                                   phi_pres_tmp_2(data, 1);
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2),
-                                                                   phi_rho_curr(data, 2);
-
-      /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old.reinit(cell);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2.reinit(cell);
-        phi_u_tmp_2.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2.reinit(cell);
-        phi_pres_tmp_2.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_rho_curr.reinit(cell);
-        phi_rho_curr.gather_evaluate(src[6], EvaluationFlags::values);
-
-        phi.reinit(cell);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old               = phi_rho_old.get_value(q);
-          const auto& u_old                 = phi_u_old.get_value(q);
-          const auto& pres_old              = phi_pres_old.get_value(q);
-
-          const auto& tensor_product_u_n    = outer_product(u_old, u_old);
-          auto p_n_times_identity           = tensor_product_u_n;
-          p_n_times_identity = 0;
-          for(unsigned int d = 0; d < dim; ++d) {
-            p_n_times_identity[d][d] = pres_old;
-          }
-
-          const auto& rho_tmp_2              = phi_rho_tmp_2.get_value(q);
-          const auto& u_tmp_2                = phi_u_tmp_2.get_value(q);
-          const auto& pres_tmp_2             = phi_pres_tmp_2.get_value(q);
-
-          const auto& tensor_product_u_tmp_2 = outer_product(u_tmp_2, u_tmp_2);
-          auto p_tmp_2_times_identity        = tensor_product_u_tmp_2;
-          p_tmp_2_times_identity = 0;
-          for(unsigned int d = 0; d < dim; ++d) {
-            p_tmp_2_times_identity[d][d] = pres_tmp_2;
-          }
-
-          const auto& rho_curr               = phi_rho_curr.get_value(q);
-
-          /*--- Compute the unit normal vecotr for gravity, which for spherical geoemetry is radial and therefore space dependent ---*/
-          Tensor<1, dim, VectorizedArray<Number>> e_r;
-          const auto& point_vectorized = phi.quadrature_point(q);
-          Point<dim> point;
-          for(unsigned int v = 0; v < VectorizedArray<Number>::size(); ++v) {
-            for(unsigned int d = 0; d < dim; ++d) {
-              point[d] = point_vectorized[d][v];
-            }
-          }
-          const double radius  = std::sqrt(point[0]*point[0] + point[1]*point[1] + point[2]*point[2]);
-          const double phi_lat = std::asin(point[2]/radius);
-          const double lambda  = std::atan2(point[1], point[0]);
-          e_r[0] = make_vectorized_array<Number>(std::cos(phi_lat)*std::cos(lambda));
-          e_r[1] = make_vectorized_array<Number>(std::cos(phi_lat)*std::sin(lambda));
-          e_r[2] = make_vectorized_array<Number>(std::sin(phi_lat));
-
-          phi.submit_value(rho_old*u_old -
-                           a31_tilde*dt/(Fr*Fr)*rho_old*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           a32_tilde*dt/(Fr*Fr)*rho_tmp_2*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           a33_tilde*dt/(Fr*Fr)*rho_curr*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref), q);
-          phi.submit_gradient(a31*dt*rho_old*tensor_product_u_n + a31_tilde*dt/(Ma*Ma)*p_n_times_identity +
-                              a32*dt*rho_tmp_2*tensor_product_u_tmp_2 + a32_tilde*dt/(Ma*Ma)*p_tmp_2_times_identity, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
-      }
-    }
-    else {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, 0),
-                                                                   phi_u_old(data, 0),
-                                                                   phi_u_tmp_2(data, 0),
-                                                                   phi_u_tmp_3(data, 0);
-      FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old(data, 1),
-                                                                   phi_pres_tmp_2(data, 1),
-                                                                   phi_pres_tmp_3(data, 1);
-      FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old(data, 2),
-                                                                   phi_rho_tmp_2(data, 2),
-                                                                   phi_rho_tmp_3(data, 2);
-
-      /*--- Loop over all cells ---*/
-      for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-        phi_rho_old.reinit(cell);
-        phi_rho_old.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old.reinit(cell);
-        phi_u_old.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old.reinit(cell);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2.reinit(cell);
-        phi_rho_tmp_2.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2.reinit(cell);
-        phi_u_tmp_2.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2.reinit(cell);
-        phi_pres_tmp_2.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_rho_tmp_3.reinit(cell);
-        phi_rho_tmp_3.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_u_tmp_3.reinit(cell);
-        phi_u_tmp_3.gather_evaluate(src[7], EvaluationFlags::values);
-        phi_pres_tmp_3.reinit(cell);
-        phi_pres_tmp_3.gather_evaluate(src[8], EvaluationFlags::values);
-
-        phi.reinit(cell);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& rho_old            = phi_rho_old.get_value(q);
-          const auto& u_old              = phi_u_old.get_value(q);
-          const auto& pres_old           = phi_pres_old.get_value(q);
-
-          const auto& tensor_product_u_n = outer_product(u_old, u_old);
-          auto p_n_times_identity        = tensor_product_u_n;
-          p_n_times_identity = 0;
-          for(unsigned int d = 0; d < dim; ++d) {
-            p_n_times_identity[d][d] = pres_old;
-          }
-
-          const auto& rho_tmp_2              = phi_rho_tmp_2.get_value(q);
-          const auto& u_tmp_2                = phi_u_tmp_2.get_value(q);
-          const auto& pres_tmp_2             = phi_pres_tmp_2.get_value(q);
-
-          const auto& tensor_product_u_tmp_2 = outer_product(u_tmp_2, u_tmp_2);
-          auto p_tmp_2_times_identity        = tensor_product_u_tmp_2;
-          p_tmp_2_times_identity = 0;
-          for(unsigned int d = 0; d < dim; ++d) {
-            p_tmp_2_times_identity[d][d] = pres_tmp_2;
-          }
-
-          const auto& rho_tmp_3              = phi_rho_tmp_3.get_value(q);
-          const auto& u_tmp_3                = phi_u_tmp_3.get_value(q);
-          const auto& pres_tmp_3             = phi_pres_tmp_3.get_value(q);
-
-          const auto& tensor_product_u_tmp_3 = outer_product(u_tmp_3, u_tmp_3);
-          auto p_tmp_3_times_identity        = tensor_product_u_tmp_3;
-          p_tmp_3_times_identity = 0;
-          for(unsigned int d = 0; d < dim; ++d) {
-            p_tmp_3_times_identity[d][d] = pres_tmp_3;
-          }
-
-          /*--- Compute the unit normal vecotr for gravity, which for spherical geoemetry is radial and therefore space dependent ---*/
-          Tensor<1, dim, VectorizedArray<Number>> e_r;
-          const auto& point_vectorized = phi.quadrature_point(q);
-          Point<dim> point;
-          for(unsigned int v = 0; v < VectorizedArray<Number>::size(); ++v) {
-            for(unsigned int d = 0; d < dim; ++d) {
-              point[d] = point_vectorized[d][v];
-            }
-          }
-          const double radius  = std::sqrt(point[0]*point[0] + point[1]*point[1] + point[2]*point[2]);
-          const double phi_lat = std::asin(point[2]/radius);
-          const double lambda  = std::atan2(point[1], point[0]);
-          e_r[0] = make_vectorized_array<Number>(std::cos(phi_lat)*std::cos(lambda));
-          e_r[1] = make_vectorized_array<Number>(std::cos(phi_lat)*std::sin(lambda));
-          e_r[2] = make_vectorized_array<Number>(std::sin(phi_lat));
-
-          phi.submit_value(rho_old*u_old -
-                           b1*dt/(Fr*Fr)*rho_old*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           b2*dt/(Fr*Fr)*rho_tmp_2*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref) -
-                           b3*dt/(Fr*Fr)*rho_tmp_3*e_r*
-                           EquationData::a*EquationData::a/(radius*radius*EquationData::L_ref*EquationData::L_ref), q);
-          phi.submit_gradient(b1*dt*rho_old*tensor_product_u_n + b1*dt/(Ma*Ma)*p_n_times_identity +
-                              b2*dt*rho_tmp_2*tensor_product_u_tmp_2 + b2*dt/(Ma*Ma)*p_tmp_2_times_identity +
-                              b3*dt*rho_tmp_3*tensor_product_u_tmp_3 + b3*dt/(Ma*Ma)*p_tmp_3_times_identity, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
-      }
-    }
-  }
-
-
-  // Assemble rhs face term for the velocity update
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_face_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                        Vec&                                         dst,
-                                        const std::vector<Vec>&                      src,
-                                        const std::pair<unsigned int, unsigned int>& face_range) const {
-    if(HYPERBOLIC_stage == 1) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_p(data, true, 0),
-                                                                       phi_m(data, false, 0),
-                                                                       phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0);
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old_p(data, true, 1),
-                                                                       phi_pres_old_m(data, false, 1);
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2);
-
-      /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old_p.reinit(face);
-        phi_pres_old_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_pres_old_m.reinit(face);
-        phi_pres_old_m.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_p.reinit(face);
-        phi_m.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus                 = phi_p.get_normal_vector(q);
-
-          const auto& rho_old_p              = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m              = phi_rho_old_m.get_value(q);
-          const auto& u_old_p                = phi_u_old_p.get_value(q);
-          const auto& u_old_m                = phi_u_old_m.get_value(q);
-          const auto& pres_old_p             = phi_pres_old_p.get_value(q);
-          const auto& pres_old_m             = phi_pres_old_m.get_value(q);
-          const auto& avg_tensor_product_u_n = 0.5*(outer_product(rho_old_p*u_old_p, u_old_p) +
-                                                    outer_product(rho_old_m*u_old_m, u_old_m));
-          const auto& avg_pres_old           = 0.5*(pres_old_p + pres_old_m);
-          const auto& jump_rhou_old          = rho_old_p*u_old_p - rho_old_m*u_old_m;
-          const auto& lambda_old             = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                                        std::abs(scalar_product(u_old_m, n_plus)));
-
-          phi_p.submit_value(-a21*dt*avg_tensor_product_u_n*n_plus
-                             -a21_tilde*dt/(Ma*Ma)*avg_pres_old*n_plus
-                             -a21*dt*0.5*lambda_old*jump_rhou_old, q);
-          phi_m.submit_value(a21*dt*avg_tensor_product_u_n*n_plus +
-                             a21_tilde*dt/(Ma*Ma)*avg_pres_old*n_plus +
-                             a21*dt*0.5*lambda_old*jump_rhou_old, q);
-        }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
-        phi_m.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_p(data, true, 0),
-                                                                       phi_m(data, false, 0),
-                                                                       phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0),
-                                                                       phi_u_tmp_2_p(data, true, 0),
-                                                                       phi_u_tmp_2_m(data, false, 0);
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old_p(data, true, 1),
-                                                                       phi_pres_old_m(data, false, 1),
-                                                                       phi_pres_tmp_2_p(data, true, 1),
-                                                                       phi_pres_tmp_2_m(data, false, 1);
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2),
-                                                                       phi_rho_tmp_2_p(data, true, 2),
-                                                                       phi_rho_tmp_2_m(data, false, 2);
-
-      /*---Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old_p.reinit(face);
-        phi_pres_old_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_pres_old_m.reinit(face);
-        phi_pres_old_m.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2_p.reinit(face);
-        phi_rho_tmp_2_p.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_rho_tmp_2_m.reinit(face);
-        phi_rho_tmp_2_m.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2_p.reinit(face);
-        phi_u_tmp_2_p.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_u_tmp_2_m.reinit(face);
-        phi_u_tmp_2_m.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2_p.reinit(face);
-        phi_pres_tmp_2_p.gather_evaluate(src[5], EvaluationFlags::values);
-        phi_pres_tmp_2_m.reinit(face);
-        phi_pres_tmp_2_m.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_p.reinit(face);
-        phi_m.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus                     = phi_p.get_normal_vector(q);
-
-          const auto& rho_old_p                  = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m                  = phi_rho_old_m.get_value(q);
-          const auto& u_old_p                    = phi_u_old_p.get_value(q);
-          const auto& u_old_m                    = phi_u_old_m.get_value(q);
-          const auto& pres_old_p                 = phi_pres_old_p.get_value(q);
-          const auto& pres_old_m                 = phi_pres_old_m.get_value(q);
-          const auto& avg_tensor_product_u_n     = 0.5*(outer_product(rho_old_p*u_old_p, u_old_p) +
-                                                        outer_product(rho_old_m*u_old_m, u_old_m));
-          const auto& avg_pres_old               = 0.5*(pres_old_p + pres_old_m);
-          const auto& jump_rhou_old              = rho_old_p*u_old_p - rho_old_m*u_old_m;
-          const auto& lambda_old                 = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                                            std::abs(scalar_product(u_old_m, n_plus)));
-
-          const auto& rho_tmp_2_p                = phi_rho_tmp_2_p.get_value(q);
-          const auto& rho_tmp_2_m                = phi_rho_tmp_2_m.get_value(q);
-          const auto& u_tmp_2_p                  = phi_u_tmp_2_p.get_value(q);
-          const auto& u_tmp_2_m                  = phi_u_tmp_2_m.get_value(q);
-          const auto& pres_tmp_2_p               = phi_pres_tmp_2_p.get_value(q);
-          const auto& pres_tmp_2_m               = phi_pres_tmp_2_m.get_value(q);
-          const auto& avg_tensor_product_u_tmp_2 = 0.5*(outer_product(rho_tmp_2_p*u_tmp_2_p, u_tmp_2_p) +
-                                                        outer_product(rho_tmp_2_m*u_tmp_2_m, u_tmp_2_m));
-          const auto& avg_pres_tmp_2             = 0.5*(pres_tmp_2_p + pres_tmp_2_m);
-          const auto& jump_rhou_tmp_2            = rho_tmp_2_p*u_tmp_2_p - rho_tmp_2_m*u_tmp_2_m;
-          const auto& lambda_tmp_2               = std::max(std::abs(scalar_product(u_tmp_2_p, n_plus)),
-                                                            std::abs(scalar_product(u_tmp_2_m, n_plus)));
-
-          phi_p.submit_value(-a31*dt*avg_tensor_product_u_n*n_plus
-                             -a31_tilde*dt/(Ma*Ma)*avg_pres_old*n_plus
-                             -a31*dt*0.5*lambda_old*jump_rhou_old
-                             -a32*dt*avg_tensor_product_u_tmp_2*n_plus
-                             -a32_tilde*dt/(Ma*Ma)*avg_pres_tmp_2*n_plus
-                             -a32*dt*0.5*lambda_tmp_2*jump_rhou_tmp_2, q);
-          phi_m.submit_value(a31*dt*avg_tensor_product_u_n*n_plus +
-                             a31_tilde*dt/(Ma*Ma)*avg_pres_old*n_plus +
-                             a31*dt*0.5*lambda_old*jump_rhou_old +
-                             a32*dt*avg_tensor_product_u_tmp_2*n_plus +
-                             a32_tilde*dt/(Ma*Ma)*avg_pres_tmp_2*n_plus +
-                             a32*dt*0.5*lambda_tmp_2*jump_rhou_tmp_2, q);
-        }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
-        phi_m.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-    else {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi_p(data, true, 0),
-                                                                       phi_m(data, false, 0),
-                                                                       phi_u_old_p(data, true, 0),
-                                                                       phi_u_old_m(data, false, 0),
-                                                                       phi_u_tmp_2_p(data, true, 0),
-                                                                       phi_u_tmp_2_m(data, false, 0),
-                                                                       phi_u_tmp_3_p(data, true, 0),
-                                                                       phi_u_tmp_3_m(data, false, 0);
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old_p(data, true, 1),
-                                                                       phi_pres_old_m(data, false, 1),
-                                                                       phi_pres_tmp_2_p(data, true, 1),
-                                                                       phi_pres_tmp_2_m(data, false, 1),
-                                                                       phi_pres_tmp_3_p(data, true, 1),
-                                                                       phi_pres_tmp_3_m(data, false, 1);
-      FEFaceEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_old_p(data, true, 2),
-                                                                       phi_rho_old_m(data, false, 2),
-                                                                       phi_rho_tmp_2_p(data, true, 2),
-                                                                       phi_rho_tmp_2_m(data, false, 2),
-                                                                       phi_rho_tmp_3_p(data, true, 2),
-                                                                       phi_rho_tmp_3_m(data, false, 2);
-
-      /*--- Loop over all internal faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_rho_old_p.reinit(face);
-        phi_rho_old_p.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_rho_old_m.reinit(face);
-        phi_rho_old_m.gather_evaluate(src[0], EvaluationFlags::values);
-        phi_u_old_p.reinit(face);
-        phi_u_old_p.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_u_old_m.reinit(face);
-        phi_u_old_m.gather_evaluate(src[1], EvaluationFlags::values);
-        phi_pres_old_p.reinit(face);
-        phi_pres_old_p.gather_evaluate(src[2], EvaluationFlags::values);
-        phi_pres_old_m.reinit(face);
-        phi_pres_old_m.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_rho_tmp_2_p.reinit(face);
-        phi_rho_tmp_2_p.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_rho_tmp_2_m.reinit(face);
-        phi_rho_tmp_2_m.gather_evaluate(src[3], EvaluationFlags::values);
-        phi_u_tmp_2_p.reinit(face);
-        phi_u_tmp_2_p.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_u_tmp_2_m.reinit(face);
-        phi_u_tmp_2_m.gather_evaluate(src[4], EvaluationFlags::values);
-        phi_pres_tmp_2_p.reinit(face);
-        phi_pres_tmp_2_p.gather_evaluate(src[5], EvaluationFlags::values);
-        phi_pres_tmp_2_m.reinit(face);
-        phi_pres_tmp_2_m.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_rho_tmp_3_p.reinit(face);
-        phi_rho_tmp_3_p.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_rho_tmp_3_m.reinit(face);
-        phi_rho_tmp_3_m.gather_evaluate(src[6], EvaluationFlags::values);
-        phi_u_tmp_3_p.reinit(face);
-        phi_u_tmp_3_p.gather_evaluate(src[7], EvaluationFlags::values);
-        phi_u_tmp_3_m.reinit(face);
-        phi_u_tmp_3_m.gather_evaluate(src[7], EvaluationFlags::values);
-        phi_pres_tmp_3_p.reinit(face);
-        phi_pres_tmp_3_p.gather_evaluate(src[8], EvaluationFlags::values);
-        phi_pres_tmp_3_m.reinit(face);
-        phi_pres_tmp_3_m.gather_evaluate(src[8], EvaluationFlags::values);
-
-        phi_p.reinit(face);
-        phi_m.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi_p.n_q_points; ++q) {
-          const auto& n_plus                     = phi_p.get_normal_vector(q);
-
-          const auto& rho_old_p                  = phi_rho_old_p.get_value(q);
-          const auto& rho_old_m                  = phi_rho_old_m.get_value(q);
-          const auto& u_old_p                    = phi_u_old_p.get_value(q);
-          const auto& u_old_m                    = phi_u_old_m.get_value(q);
-          const auto& pres_old_p                 = phi_pres_old_p.get_value(q);
-          const auto& pres_old_m                 = phi_pres_old_m.get_value(q);
-          const auto& avg_tensor_product_u_n     = 0.5*(outer_product(rho_old_p*u_old_p, u_old_p) +
-                                                        outer_product(rho_old_m*u_old_m, u_old_m));
-          const auto& avg_pres_old               = 0.5*(pres_old_p + pres_old_m);
-          const auto& jump_rhou_old              = rho_old_p*u_old_p - rho_old_m*u_old_m;
-          const auto& lambda_old                 = std::max(std::abs(scalar_product(u_old_p, n_plus)),
-                                                            std::abs(scalar_product(u_old_m, n_plus)));
-
-          const auto& rho_tmp_2_p                = phi_rho_tmp_2_p.get_value(q);
-          const auto& rho_tmp_2_m                = phi_rho_tmp_2_m.get_value(q);
-          const auto& u_tmp_2_p                  = phi_u_tmp_2_p.get_value(q);
-          const auto& u_tmp_2_m                  = phi_u_tmp_2_m.get_value(q);
-          const auto& pres_tmp_2_p               = phi_pres_tmp_2_p.get_value(q);
-          const auto& pres_tmp_2_m               = phi_pres_tmp_2_m.get_value(q);
-          const auto& avg_tensor_product_u_tmp_2 = 0.5*(outer_product(rho_tmp_2_p*u_tmp_2_p, u_tmp_2_p) +
-                                                        outer_product(rho_tmp_2_m*u_tmp_2_m, u_tmp_2_m));
-          const auto& avg_pres_tmp_2             = 0.5*(pres_tmp_2_p + pres_tmp_2_m);
-          const auto& jump_rhou_tmp_2            = rho_tmp_2_p*u_tmp_2_p - rho_tmp_2_m*u_tmp_2_m;
-          const auto& lambda_tmp_2               = std::max(std::abs(scalar_product(u_tmp_2_p, n_plus)),
-                                                            std::abs(scalar_product(u_tmp_2_m, n_plus)));
-
-          const auto& rho_tmp_3_p                = phi_rho_tmp_3_p.get_value(q);
-          const auto& rho_tmp_3_m                = phi_rho_tmp_3_m.get_value(q);
-          const auto& u_tmp_3_p                  = phi_u_tmp_3_p.get_value(q);
-          const auto& u_tmp_3_m                  = phi_u_tmp_3_m.get_value(q);
-          const auto& pres_tmp_3_p               = phi_pres_tmp_3_p.get_value(q);
-          const auto& pres_tmp_3_m               = phi_pres_tmp_3_m.get_value(q);
-          const auto& avg_tensor_product_u_tmp_3 = 0.5*(outer_product(rho_tmp_3_p*u_tmp_3_p, u_tmp_3_p) +
-                                                        outer_product(rho_tmp_3_m*u_tmp_3_m, u_tmp_3_m));
-          const auto& avg_pres_tmp_3             = 0.5*(pres_tmp_3_p + pres_tmp_3_m);
-          const auto& jump_rhou_tmp_3            = rho_tmp_3_p*u_tmp_3_p - rho_tmp_3_m*u_tmp_3_m;
-          const auto& lambda_tmp_3               = std::max(std::abs(scalar_product(u_tmp_3_p, n_plus)),
-                                                            std::abs(scalar_product(u_tmp_3_m, n_plus)));
-
-          phi_p.submit_value(-b1*dt*avg_tensor_product_u_n*n_plus
-                             -b1*dt/(Ma*Ma)*avg_pres_old*n_plus
-                             -b1*dt*0.5*lambda_old*jump_rhou_old
-                             -b2*dt*avg_tensor_product_u_tmp_2*n_plus
-                             -b2*dt/(Ma*Ma)*avg_pres_tmp_2*n_plus
-                             -b2*dt*0.5*lambda_tmp_2*jump_rhou_tmp_2
-                             -b3*dt*avg_tensor_product_u_tmp_3*n_plus
-                             -b3*dt/(Ma*Ma)*avg_pres_tmp_3*n_plus
-                             -b3*dt*0.5*lambda_tmp_3*jump_rhou_tmp_3, q);
-          phi_m.submit_value(b1*dt*avg_tensor_product_u_n*n_plus +
-                             b1*dt/(Ma*Ma)*avg_pres_old*n_plus +
-                             b1*dt*0.5*lambda_old*jump_rhou_old +
-                             b2*dt*avg_tensor_product_u_tmp_2*n_plus +
-                             b2*dt/(Ma*Ma)*avg_pres_tmp_2*n_plus +
-                             b2*dt*0.5*lambda_tmp_2*jump_rhou_tmp_2 +
-                             b3*dt*avg_tensor_product_u_tmp_3*n_plus +
-                             b3*dt/(Ma*Ma)*avg_pres_tmp_3*n_plus +
-                             b3*dt*0.5*lambda_tmp_3*jump_rhou_tmp_3, q);
-        }
-        phi_p.integrate_scatter(EvaluationFlags::values, dst);
-        phi_m.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-  }
-
-
-  // Assemble rhs boundary term for the velocity update
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_rhs_boundary_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                             Vec&                                         dst,
-                                             const std::vector<Vec>&                      src,
-                                             const std::pair<unsigned int, unsigned int>& face_range) const {
-    if(HYPERBOLIC_stage == 1) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, true, 0);
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old(data, true, 1);
-
-      /*--- Loop over all boundary faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_pres_old.reinit(face);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& n_plus       = phi.get_normal_vector(q);
-
-          const auto& pres_old     = phi_pres_old.get_value(q);
-          const auto& pres_old_D   = pres_old;
-
-          const auto& avg_pres_old = 0.5*(pres_old + pres_old_D);
-
-          phi.submit_value(-a21_tilde*dt/(Ma*Ma)*avg_pres_old*n_plus, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-    else if(HYPERBOLIC_stage == 2) {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, true, 0);
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old(data, true, 1),
-                                                                       phi_pres_tmp_2(data, true, 1);
-
-      /*--- Loop over all boundary faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_pres_old.reinit(face);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_pres_tmp_2.reinit(face);
-        phi_pres_tmp_2.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& n_plus         = phi.get_normal_vector(q);
-
-          const auto& pres_old       = phi_pres_old.get_value(q);
-          const auto& pres_old_D     = pres_old;
-
-          const auto& avg_pres_old   = 0.5*(pres_old + pres_old_D);
-
-          const auto& pres_tmp_2     = phi_pres_tmp_2.get_value(q);
-          const auto& pres_tmp_2_D   = pres_tmp_2;
-
-          const auto& avg_pres_tmp_2 = 0.5*(pres_tmp_2 + pres_tmp_2_D);
-
-          phi.submit_value(-a31_tilde*dt/(Ma*Ma)*avg_pres_old*n_plus
-                           -a32_tilde*dt/(Ma*Ma)*avg_pres_tmp_2*n_plus, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-    else {
-      /*--- We first start by declaring the suitable instances to read the available quantities. ---*/
-      FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, true, 0);
-      FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number>   phi_pres_old(data, true, 1),
-                                                                       phi_pres_tmp_2(data, true, 1),
-                                                                       phi_pres_tmp_3(data, true, 1);
-
-      /*--- Loop over all boundary faces ---*/
-      for(unsigned int face = face_range.first; face < face_range.second; ++face) {
-        phi_pres_old.reinit(face);
-        phi_pres_old.gather_evaluate(src[2], EvaluationFlags::values);
-
-        phi_pres_tmp_2.reinit(face);
-        phi_pres_tmp_2.gather_evaluate(src[5], EvaluationFlags::values);
-
-        phi_pres_tmp_3.reinit(face);
-        phi_pres_tmp_3.gather_evaluate(src[8], EvaluationFlags::values);
-
-        phi.reinit(face);
-
-        /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          const auto& n_plus         = phi.get_normal_vector(q);
-
-          const auto& pres_old       = phi_pres_old.get_value(q);
-          const auto& pres_old_D     = pres_old;
-
-          const auto& avg_pres_old   = 0.5*(pres_old + pres_old_D);
-
-          const auto& pres_tmp_2     = phi_pres_tmp_2.get_value(q);
-          const auto& pres_tmp_2_D   = pres_tmp_2;
-
-          const auto& avg_pres_tmp_2 = 0.5*(pres_tmp_2 + pres_tmp_2_D);
-
-          const auto& pres_tmp_3     = phi_pres_tmp_3.get_value(q);
-          const auto& pres_tmp_3_D   = pres_tmp_3;
-
-          const auto& avg_pres_tmp_3 = 0.5*(pres_tmp_3 + pres_tmp_3_D);
-
-          phi.submit_value(-b1*dt/(Ma*Ma)*avg_pres_old*n_plus
-                           -b2*dt/(Ma*Ma)*avg_pres_tmp_2*n_plus
-                           -b3*dt/(Ma*Ma)*avg_pres_tmp_3*n_plus, q);
-        }
-        phi.integrate_scatter(EvaluationFlags::values, dst);
-      }
-    }
-  }
-
-
-  // Put together all the previous steps for velocity update
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  vmult_rhs_velocity_fixed(Vec& dst, const std::vector<Vec>& src) const {
-    for(unsigned int d = 0; d < src.size(); ++d) {
-      src[d].update_ghost_values();
-    }
-
-    this->data->loop(&EULEROperator::assemble_rhs_cell_term_velocity_fixed,
-                     &EULEROperator::assemble_rhs_face_term_velocity_fixed,
-                     &EULEROperator::assemble_rhs_boundary_term_velocity_fixed,
-                     this, dst, src, true,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified);
-  }
-
-
-  // Assemble cell term for the velocity update
-  //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_cell_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                     Vec&                                         dst,
-                                     const Vec&                                   src,
-                                     const std::pair<unsigned int, unsigned int>& cell_range) const {
-    /*--- We first start by declaring the suitable instances to read also available quantities.
-          Since here we have just one 'src' vector, but we also need to deal with the current density,
-          we employ the auxiliary vector 'rho_for_fixed' where we setted this information ---*/
-    FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, 0);
-    FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_for_fixed(data, 2);
-
-    /*--- Loop over all cells ---*/
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
-      phi_rho_for_fixed.reinit(cell);
-      phi_rho_for_fixed.gather_evaluate(rho_for_fixed, EvaluationFlags::values);
-      phi.reinit(cell);
-      phi.gather_evaluate(src, EvaluationFlags::values);
-
-      /*--- Loop over all qaudrature points ---*/
-      for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-        phi.submit_value(phi_rho_for_fixed.get_value(q)*phi.get_value(q), q);
-      }
-      phi.integrate_scatter(EvaluationFlags::values, dst);
-    }
-  }
-
+  //////////////////////////////////////////////////////////////
+  /*---- APPLICATION OF THE DIFFERENT LINEAR OPERATORS ---*/
+  /////////////////////////////////////////////////////////////
 
   // Put together all previous steps
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   apply_add(Vec& dst, const Vec& src) const {
-    AssertIndexRange(NS_stage, 7);
-    Assert(NS_stage > 0, ExcInternalError());
+    AssertIndexRange(Euler_stage, EquationData::n_vars + 1);
+    Assert(Euler_stage > 0, ExcInternalError());
 
-    if(NS_stage == 1 || NS_stage == 4) {
-      this->data->cell_loop(&EULEROperator::assemble_cell_term_rho_update,
+    if(Euler_stage == EquationData::RHO_INDEX_SYSTEM) {
+      this->data->cell_loop(&EULEROperator::assemble_cell_term_density,
                             this, dst, src, false);
     }
-    else if(NS_stage == 2) {
-      this->data->cell_loop(&EULEROperator::assemble_cell_term_internal_energy,
-                            this, dst, src, false);
+    else if(Euler_stage == EquationData::P_INDEX_SYSTEM) {
+      if(IMEX_stage <= n_stages) {
+        this->data->cell_loop(&EULEROperator::assemble_cell_term_internal_energy,
+                              this, dst, src, false);
 
-      /*--- Implementation of the Schur complement operations ---*/
-      Vec tmp_1;
-      this->data->initialize_dof_vector(tmp_1, 0);
-      this->vmult_pressure(tmp_1, src);
+        /*--- Implementation of the Schur complement operations ---*/
+        Vec tmp_1;
+        this->data->initialize_dof_vector(tmp_1, EquationData::U_INDEX_DOF);
+        this->vmult_pressure(tmp_1, src);
 
-      NS_stage = 3;
-      const std::vector<unsigned int> tmp_reinit = {0};
-      auto* tmp_matrix = const_cast<EULEROperator*>(this);
-      Vec tmp_2;
-      this->data->initialize_dof_vector(tmp_2, 0);
-      tmp_2 = 0;
-      tmp_matrix->initialize(tmp_matrix->get_matrix_free(), tmp_reinit, tmp_reinit);
+        Euler_stage = EquationData::U_INDEX_SYSTEM;
+        const std::vector<unsigned> index_dof_handler_reinit = {EquationData::U_INDEX_DOF};
+        auto* tmp_matrix = const_cast<EULEROperator*>(this);
+        Vec tmp_2;
+        this->data->initialize_dof_vector(tmp_2, EquationData::U_INDEX_DOF);
+        tmp_matrix->initialize(tmp_matrix->get_matrix_free(), index_dof_handler_reinit, index_dof_handler_reinit);
+        this->vmult(tmp_2, tmp_1);
 
-      SolverControl solver_control(10000, 1e-12*tmp_1.l2_norm());
-      SolverCG<Vec> cg(solver_control);
-      PreconditionJacobi<EULEROperator> preconditioner_Jacobi;
-      tmp_matrix->compute_diagonal();
-      preconditioner_Jacobi.initialize(*tmp_matrix);
+        Vec tmp_3;
+        this->data->initialize_dof_vector(tmp_3, EquationData::P_INDEX_DOF);
+        this->vmult_enthalpy(tmp_3, tmp_2);
 
-      cg.solve(*tmp_matrix, tmp_2, tmp_1, preconditioner_Jacobi);
-
-      Vec tmp_3;
-      this->data->initialize_dof_vector(tmp_3, 1);
-      this->vmult_enthalpy(tmp_3, tmp_2);
-
-      dst.add(-1.0, tmp_3);
-      NS_stage = 2;
-      const std::vector<unsigned int> tmp = {1};
-      tmp_matrix->initialize(tmp_matrix->get_matrix_free(), tmp, tmp);
-      tmp_matrix->compute_diagonal();
+        dst.add(static_cast<Number>(-1.0), tmp_3);
+        Euler_stage = EquationData::P_INDEX_SYSTEM;
+        const std::vector<unsigned> index_dof_handler = {EquationData::P_INDEX_DOF};
+        tmp_matrix->initialize(tmp_matrix->get_matrix_free(), index_dof_handler, index_dof_handler);
+        tmp_matrix->compute_diagonal();
+      }
+      else {
+        this->data->cell_loop(&EULEROperator::assemble_inverse_cell_term_internal_energy,
+                              this, dst, src, false);
+      }
     }
-    else if(NS_stage == 3 || NS_stage == 5) {
-      this->data->cell_loop(&EULEROperator::assemble_cell_term_velocity_fixed,
+    else if(Euler_stage == EquationData::U_INDEX_SYSTEM) {
+      this->data->cell_loop(&EULEROperator::assemble_cell_term_velocity,
                             this, dst, src, false);
     }
     else {
-      this->data->cell_loop(&EULEROperator::assemble_cell_term_internal_energy,
-                            this, dst, src, false);
+      Assert(false, ExcInternalError());
     }
   }
 
 
   // Application of pressure matrix
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   vmult_pressure(Vec& dst, const Vec& src) const {
     src.update_ghost_values();
 
@@ -2430,17 +1920,21 @@ namespace Atmospheric_Flow {
                      &EULEROperator::assemble_face_term_pressure,
                      &EULEROperator::assemble_boundary_term_pressure,
                      this, dst, src, true,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified);
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values,
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values);
   }
 
 
   // Application of enthalpy matrix
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   vmult_enthalpy(Vec& dst, const Vec& src) const {
     src.update_ghost_values();
 
@@ -2448,31 +1942,40 @@ namespace Atmospheric_Flow {
                      &EULEROperator::assemble_face_term_enthalpy,
                      &EULEROperator::assemble_boundary_term_enthalpy,
                      this, dst, src, true,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified,
-                     MatrixFree<dim, Number>::DataAccessOnFaces::unspecified);
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values,
+                     MatrixFree<dim, Number>::DataAccessOnFaces::values);
   }
 
 
-  // Assemble diagonal cell term for the rho projection
+  //////////////////////////////////////////////////////////////
+  /*---- COMPUTE DIAGONALS---*/
+  /////////////////////////////////////////////////////////////
+
+  // Assemble diagonal cell term for the density update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_diagonal_cell_term_rho_update(const MatrixFree<dim, Number>&               data,
-                                         Vec&                                         dst,
-                                         const unsigned int&                          ,
-                                         const std::pair<unsigned int, unsigned int>& cell_range) const {
-    FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi(data, 2);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_diagonal_cell_term_density(const MatrixFree<dim, Number>&               data,
+                                      Vec&                                         dst,
+                                      const unsigned&                          ,
+                                      const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation<dim, fe_degree_rho, fe_degree_rho + 1, 1, Number> phi(data, EquationData::RHO_INDEX_DOF, 2);
 
     AlignedVector<VectorizedArray<Number>> diagonal(phi.dofs_per_component);
 
     /*--- Loop over all cells ---*/
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
       phi.reinit(cell);
 
-      for(unsigned int i = 0; i < phi.dofs_per_component; ++i) {
-        for(unsigned int j = 0; j < phi.dofs_per_component; ++j) {
+      /*--- Loop over all dofs ---*/
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
+        for(unsigned j = 0; j < phi.dofs_per_component; ++j) {
           phi.submit_dof_value(VectorizedArray<Number>(), j);
         }
         phi.submit_dof_value(make_vectorized_array<Number>(1.0), i);
@@ -2481,13 +1984,15 @@ namespace Atmospheric_Flow {
         phi.evaluate(EvaluationFlags::values);
 
         /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
+        for(const unsigned q : phi.quadrature_point_indices()) {
           phi.submit_value(phi.get_value(q), q);
         }
+
         phi.integrate(EvaluationFlags::values);
         diagonal[i] = phi.get_dof_value(i);
       }
-      for(unsigned int i = 0; i < phi.dofs_per_component; ++i) {
+
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
         phi.submit_dof_value(diagonal[i], i);
       }
       phi.distribute_local_to_global(dst);
@@ -2497,48 +2002,115 @@ namespace Atmospheric_Flow {
 
   // Assemble diagonal cell term for the velocity update
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_diagonal_cell_term_velocity_fixed(const MatrixFree<dim, Number>&               data,
-                                             Vec&                                         dst,
-                                             const unsigned int&                          ,
-                                             const std::pair<unsigned int, unsigned int>& cell_range) const {
-    FEEvaluation<dim, fe_degree_u, n_q_points_1d_u, dim, Number> phi(data, 0);
-    FEEvaluation<dim, fe_degree_rho, n_q_points_1d_u, 1, Number> phi_rho_for_fixed(data, 2);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_diagonal_cell_term_velocity(const MatrixFree<dim, Number>&       data,
+                                       Vec&                                 dst,
+                                       const unsigned&                      ,
+                                       const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation_u   phi(data, EquationData::U_INDEX_DOF);
+    FEEvaluation_rho phi_rho_for_fixed(data, EquationData::RHO_INDEX_DOF);
 
     /*--- We are in a matrix-free framework. Hence, in order to compute the diagonal, we need to test the operator against
-          a vector which is 1 for the node of interest and 0 elsewhere. This is what 'tmp' does.
+          a vector which is 1 for the node of interest and 0 elsewhere. This is what 'tmp_diagonal_velocity' does.
           Moreover, since here we have just one 'src' vector, but we also need to deal with the current density,
           we employ the auxiliary vector 'rho_for_fixed' where we setted this information ---*/
     AlignedVector<Tensor<1, dim, VectorizedArray<Number>>> diagonal(phi.dofs_per_component);
-    Tensor<1, dim, VectorizedArray<Number>> tmp;
-    for(unsigned int d = 0; d < dim; ++d) {
-      tmp[d] = make_vectorized_array<Number>(1.0);
-    }
 
     /*--- Loop over all cells ---*/
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
       phi_rho_for_fixed.reinit(cell);
       phi_rho_for_fixed.gather_evaluate(rho_for_fixed, EvaluationFlags::values);
+
       phi.reinit(cell);
 
-      for(unsigned int i = 0; i < phi.dofs_per_component; ++i) {
-        for(unsigned int j = 0; j < phi.dofs_per_component; ++j) {
+      /*--- Loop over all dofs ---*/
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
+        for(unsigned j = 0; j < phi.dofs_per_component; ++j) {
           phi.submit_dof_value(Tensor<1, dim, VectorizedArray<Number>>(), j);
         }
-        phi.submit_dof_value(tmp, i);
+        phi.submit_dof_value(tmp_diagonal_velocity, i);
         phi.evaluate(EvaluationFlags::values);
 
         /*--- Loop over all quadrature points ---*/
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
+        for(const unsigned q : phi.quadrature_point_indices()) {
           phi.submit_value(phi_rho_for_fixed.get_value(q)*phi.get_value(q), q);
         }
+
         phi.integrate(EvaluationFlags::values);
         diagonal[i] = phi.get_dof_value(i);
       }
-      for(unsigned int i = 0; i < phi.dofs_per_component; ++i) {
+
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
+        phi.submit_dof_value(diagonal[i], i);
+      }
+      phi.distribute_local_to_global(dst);
+    }
+  }
+
+
+  // Assemble diagonal cell term for the pressure updated with Schur complement
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_diagonal_cell_term_pressure(const MatrixFree<dim, Number>&       data,
+                                       Vec&                                 dst,
+                                       const unsigned&                      ,
+                                       const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation_pres phi(data, EquationData::P_INDEX_DOF),
+                      phi_pres_fixed(data, EquationData::P_INDEX_DOF);
+    FEEvaluation_rho  phi_rho_for_fixed(data, EquationData::RHO_INDEX_DOF);
+
+    AlignedVector<VectorizedArray<Number>> diagonal(phi.dofs_per_component);
+
+    /*--- Loop over all cells ---*/
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi_pres_fixed.reinit(cell);
+      phi_pres_fixed.gather_evaluate(pres_fixed, EvaluationFlags::values);
+
+      phi_rho_for_fixed.reinit(cell);
+      phi_rho_for_fixed.gather_evaluate(rho_for_fixed, EvaluationFlags::values);
+
+      phi.reinit(cell);
+
+      /*--- Loop over all dofs ---*/
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
+        for(unsigned j = 0; j < phi.dofs_per_component; ++j) {
+          phi.submit_dof_value(VectorizedArray<Number>(), j);
+        }
+        phi.submit_dof_value(make_vectorized_array<Number>(1.0), i);
+        /*--- We are in a matrix-free framework. Hence, in order to compute the diagonal, we need to test the operator against
+              a vector which is 1 for the node of interest and 0 elsewhere.---*/
+        phi.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
+
+        /*--- Loop over all quadrature points ---*/
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          const auto& pres_fixed    = phi_pres_fixed.get_value(q);
+
+          const auto& rho_for_fixed = phi_rho_for_fixed.get_value(q);
+
+          phi.submit_value(inv_gamma_m1*phi.get_value(q), q);
+          phi.submit_gradient((a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt)*(a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt)*inv_Ma2*
+                              (inv_Gamma*(pres_fixed/rho_for_fixed)*phi.get_gradient(q)), q);
+        }
+
+        phi.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
+        diagonal[i] = phi.get_dof_value(i);
+      }
+
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
         phi.submit_dof_value(diagonal[i], i);
       }
       phi.distribute_local_to_global(dst);
@@ -2548,23 +2120,28 @@ namespace Atmospheric_Flow {
 
   // Assemble diagonal cell term for the contribution due to internal energy
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
-  assemble_diagonal_cell_term_internal_energy(const MatrixFree<dim, Number>&               data,
-                                              Vec&                                         dst,
-                                              const unsigned int&                          ,
-                                              const std::pair<unsigned int, unsigned int>& cell_range) const {
-    FEEvaluation<dim, fe_degree_T, n_q_points_1d_u, 1, Number> phi(data, 1);
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_diagonal_cell_term_internal_energy(const MatrixFree<dim, Number>&       data,
+                                              Vec&                                 dst,
+                                              const unsigned&                      ,
+                                              const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation<dim, fe_degree_p, fe_degree_p + 1, 1, Number> phi(data, EquationData::P_INDEX_DOF, 4);
 
     AlignedVector<VectorizedArray<Number>> diagonal(phi.dofs_per_component);
 
-    for(unsigned int cell = cell_range.first; cell < cell_range.second; ++cell) {
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
       phi.reinit(cell);
 
-      for(unsigned int i = 0; i < phi.dofs_per_component; ++i) {
-        for(unsigned int j = 0; j < phi.dofs_per_component; ++j) {
+      /*--- Loop over all dofs ---*/
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
+        for(unsigned j = 0; j < phi.dofs_per_component; ++j) {
           phi.submit_dof_value(VectorizedArray<Number>(), j);
         }
         phi.submit_dof_value(make_vectorized_array<Number>(1.0), i);
@@ -2572,13 +2149,15 @@ namespace Atmospheric_Flow {
               a vector which is 1 for the node of interest and 0 elsewhere.---*/
         phi.evaluate(EvaluationFlags::values);
 
-        for(unsigned int q = 0; q < phi.n_q_points; ++q) {
-          phi.submit_value(1.0/(EquationData::Cp_Cv - 1.0)*phi.get_value(q), q);
+        for(const unsigned q : phi.quadrature_point_indices()) {
+          phi.submit_value(inv_gamma_m1*phi.get_value(q), q);
         }
+
         phi.integrate(EvaluationFlags::values);
         diagonal[i] = phi.get_dof_value(i);
       }
-      for(unsigned int i = 0; i < phi.dofs_per_component; ++i) {
+
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
         phi.submit_dof_value(diagonal[i], i);
       }
       phi.distribute_local_to_global(dst);
@@ -2588,40 +2167,56 @@ namespace Atmospheric_Flow {
 
   // Compute diagonal of various steps
   //
-  template<int dim, int fe_degree_rho, int fe_degree_T, int fe_degree_u,
-           int n_q_points_1d_rho, int n_q_points_1d_T, int n_q_points_1d_u, typename Vec>
-  void EULEROperator<dim, fe_degree_rho, fe_degree_T, fe_degree_u,
-                          n_q_points_1d_rho, n_q_points_1d_T, n_q_points_1d_u, Vec>::
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
   compute_diagonal() {
+    AssertIndexRange(Euler_stage, EquationData::n_vars + 1);
+    Assert(Euler_stage > 0, ExcInternalError());
+
     this->inverse_diagonal_entries.reset(new DiagonalMatrix<Vec>());
     auto& inverse_diagonal = this->inverse_diagonal_entries->get_vector();
 
-    const unsigned int dummy = 0;
+    const unsigned dummy = 0;
 
-    if(NS_stage == 1 || NS_stage == 4) {
-      this->data->initialize_dof_vector(inverse_diagonal, 2);
+    if(Euler_stage == EquationData::RHO_INDEX_SYSTEM) {
+      this->data->initialize_dof_vector(inverse_diagonal, EquationData::RHO_INDEX_DOF);
 
-      this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_rho_update,
+      this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_density,
                             this, inverse_diagonal, dummy, false);
     }
-    else if(NS_stage == 2 || NS_stage == 6) {
-      this->data->initialize_dof_vector(inverse_diagonal, 1);
+    else if(Euler_stage == EquationData::P_INDEX_SYSTEM) {
+      this->data->initialize_dof_vector(inverse_diagonal, EquationData::P_INDEX_DOF);
 
-      this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_internal_energy,
+      if(IMEX_stage <= n_stages) {
+        this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_pressure,
+                              this, inverse_diagonal, dummy, false);
+      }
+      else {
+        this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_internal_energy,
+                              this, inverse_diagonal, dummy, false);
+      }
+    }
+    else if(Euler_stage == EquationData::U_INDEX_SYSTEM) {
+      this->data->initialize_dof_vector(inverse_diagonal, EquationData::U_INDEX_DOF);
+
+      this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_velocity,
                             this, inverse_diagonal, dummy, false);
     }
     else {
-      this->data->initialize_dof_vector(inverse_diagonal, 0);
-
-      this->data->cell_loop(&EULEROperator::assemble_diagonal_cell_term_velocity_fixed,
-                            this, inverse_diagonal, dummy, false);
+      Assert(false, ExcInternalError());
     }
 
     /*--- For the preconditioner, we actually need the inverse of the diagonal ---*/
-    for(unsigned int i = 0; i < inverse_diagonal.local_size(); ++i) {
-      Assert(inverse_diagonal.local_element(i) != 0.0,
+    for(unsigned i = 0; i < inverse_diagonal.locally_owned_size(); ++i) {
+      Assert(inverse_diagonal.local_element(i) != static_cast<Number>(0.0),
              ExcMessage("No diagonal entry in a definite operator should be zero"));
-      inverse_diagonal.local_element(i) = 1.0/inverse_diagonal.local_element(i);
+      inverse_diagonal.local_element(i) = static_cast<Number>(1.0)/inverse_diagonal.local_element(i);
     }
   }
 }
