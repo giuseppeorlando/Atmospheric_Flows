@@ -218,9 +218,9 @@ namespace RunTimeParameters {
                         "The Rossby number (used only in presence of rotation).");
       prm.declare_entry("rotation_formulation",
                         "none",
-                        Patterns::Selection("none|R1"),
-                        "Formulation of the rotation term: 'none' (no rotation) or 'R1' "
-                        "(see https://arxiv.org/abs/2605.29598).");
+                        Patterns::Selection("none|R1|R2"),
+                        "Formulation of the rotation term: 'none' (no rotation), 'R1' or 'R2' "
+                        "(see https://arxiv.org/abs/2605.29598 and include/physics/rotation.h).");
 
       prm.declare_entry("L_ref",
                         "1.0",

@@ -891,8 +891,13 @@ void EulerSolver<dim>::precompute_rhs_pressure() {
 
   euler_matrix.vmult_rhs_momentum(rhs_momentum, vectors_rhs_momentum_equation);
 
-  // 'Solve' to compute first contribution to rhs
+  // 'Solve' to compute first contribution to rhs. For the R2 formulation of the rotation term,
+  // the Coriolis force at the current stage is included through (A + R)^{-1} = (I + beta J)^{-1} A^{-1}
   euler_matrix.vmult(rhs_u_precomputed, rhs_momentum);
+  if(euler_matrix.get_rotation_formulation() == Rotation::Formulation::R2) {
+    const Vec rhs_u_precomputed_no_rotation(rhs_u_precomputed);
+    euler_matrix.vmult_inverse_rotation(rhs_u_precomputed, rhs_u_precomputed_no_rotation);
+  }
 }
 
 // This implements a step of the fixed point procedure for the computation of the pressure
@@ -925,6 +930,13 @@ void EulerSolver<dim>::pressure_fixed_point() {
 
   // Conclude computation of rhs for pressure fixed point
   rhs_pres.add(static_cast<Number>(-1.0), rhs_pres_precomputed);
+
+  // For the R2 formulation of the rotation term, also the gravity term of the energy equation
+  // at the current stage is included in the linear system
+  if(euler_matrix.get_rotation_formulation() == Rotation::Formulation::R2) {
+    euler_matrix.vmult_gravity(rhs_pres_precomputed, rhs_u_precomputed);
+    rhs_pres.add(static_cast<Number>(-1.0), rhs_pres_precomputed);
+  }
 
   // Jacobi preconditioner for this system
   PreconditionJacobi<MatrixType> preconditioner_Jacobi;
@@ -1006,9 +1018,14 @@ void EulerSolver<dim>::update_velocity() {
     euler_matrix.vmult_rhs_momentum(rhs_u, vectors_rhs_momentum_equation);
   }
 
-  // 'Solve' the system for the velocity
+  // 'Solve' the system for the velocity. For the R2 formulation of the rotation term,
+  // the Coriolis force at the current stage is included through (A + R)^{-1} = (I + beta J)^{-1} A^{-1}
   if(IMEX_stage <= n_stages) {
     euler_matrix.vmult(u_fixed, rhs_u);
+    if(euler_matrix.get_rotation_formulation() == Rotation::Formulation::R2) {
+      const Vec u_fixed_no_rotation(u_fixed);
+      euler_matrix.vmult_inverse_rotation(u_fixed, u_fixed_no_rotation);
+    }
   }
   else {
     euler_matrix.vmult(u_s.back(), rhs_u);

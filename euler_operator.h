@@ -180,6 +180,22 @@ namespace Atmospheric_Flow {
     void vmult_enthalpy(Vec& dst, const Vec& src) const;
 
     /**
+     * Action of matrix 'Mg', i.e. gravity term at the current stage of the energy equation
+     * (only for the R2 formulation of the rotation term)
+     * @return dst destination vector
+     * @param src velocity to which apply the 'gravity' operator in energy equation
+     */
+    void vmult_gravity(Vec& dst, const Vec& src) const;
+
+    /**
+     * Action of (I + beta J)^{-1}, so that (A + R)^{-1} = (I + beta J)^{-1} A^{-1}, with 'R' the matrix
+     * associated to the Coriolis force at the current stage (only for the R2 formulation of the rotation term)
+     * @return dst destination vector
+     * @param src vector to which apply the operator
+     */
+    void vmult_inverse_rotation(Vec& dst, const Vec& src) const;
+
+    /**
      * Overriden function to compute the diagonal for several (possible) preconditioners
      */
     virtual void compute_diagonal() override;
@@ -488,6 +504,32 @@ namespace Atmospheric_Flow {
                                          const Vec&                           src,
                                          const std::pair<unsigned, unsigned>& face_range) const {}
                                          // No flux, so no contribution from this function
+
+    // Assembler function for the 'Mg' matrix
+    /**
+     * Assemble matrix cell contribution 'gravity' operator energy equation
+     * @param data matrix-free infrastructure with all data
+     * @return dst destination vector
+     * @param src vector to which aply the operator
+     * @param cell_range range of cells to be locally assembled
+     */
+    void assemble_cell_term_gravity(const MatrixFree<dim, Number>&       data,
+                                    Vec&                                 dst,
+                                    const Vec&                           src,
+                                    const std::pair<unsigned, unsigned>& cell_range) const;
+
+    // Assembler function for (I + beta J)^{-1}
+    /**
+     * Apply (I + beta J)^{-1} for each degree of freedom of the velocity
+     * @param data matrix-free infrastructure with all data
+     * @return dst destination vector
+     * @param src vector to which aply the operator
+     * @param cell_range range of cells to be locally assembled
+     */
+    void assemble_inverse_rotation(const MatrixFree<dim, Number>&       data,
+                                   Vec&                                 dst,
+                                   const Vec&                           src,
+                                   const std::pair<unsigned, unsigned>& cell_range) const;
 
     // Assembler function for the diagonal part of the elliptic operator
     // associated to the Schur complement for the pressure
@@ -1762,11 +1804,14 @@ namespace Atmospheric_Flow {
           }
 
           // We assign to the rhs the contribution due to kinetic energy in the fixed point loop.
-          // Add last contribution of the gravity term (implicit treatment)
+          // Add last contribution of the gravity term (implicit treatment). For the R2 formulation
+          // of the rotation term, this contribution is included in the linear system for the pressure
           const auto& rho_for_fixed_s = phi_rho.back().get_value(q);
           const auto& u_fixed_s       = phi_u.back().get_value(q);
-          gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
-                          (Ma2_ov_Fr2*rho_for_fixed_s*u_fixed_s[EquationData::n_comp_u - 1]);
+          if(rotation != Rotation::Formulation::R2) {
+            gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                            (Ma2_ov_Fr2*rho_for_fixed_s*u_fixed_s[EquationData::n_comp_u - 1]);
+          }
 
           phi.submit_value(rhoE_old -
                            rho_for_fixed_s*(static_cast<Number>(0.5)*Ma2*scalar_product(u_fixed_s, u_fixed_s)) -
@@ -2246,11 +2291,28 @@ namespace Atmospheric_Flow {
         tmp_matrix->initialize(tmp_matrix->get_matrix_free(), index_dof_handler_reinit, index_dof_handler_reinit);
         this->vmult(tmp_2, tmp_1);
 
+        // For the R2 formulation of the rotation term, the Coriolis force at the current stage
+        // is included through (A + R)^{-1} = (I + beta J)^{-1} A^{-1}
+        if(rotation == Rotation::Formulation::R2) {
+          const Vec tmp_2_no_rotation(tmp_2);
+          this->vmult_inverse_rotation(tmp_2, tmp_2_no_rotation);
+        }
+
         Vec tmp_3;
         this->data->initialize_dof_vector(tmp_3, EquationData::P_INDEX_DOF);
         this->vmult_enthalpy(tmp_3, tmp_2);
 
         dst.add(static_cast<Number>(-1.0), tmp_3);
+
+        // For the R2 formulation of the rotation term, also the gravity term
+        // of the energy equation at the current stage is included
+        if(rotation == Rotation::Formulation::R2) {
+          Vec tmp_4;
+          this->data->initialize_dof_vector(tmp_4, EquationData::P_INDEX_DOF);
+          this->vmult_gravity(tmp_4, tmp_2);
+
+          dst.add(static_cast<Number>(-1.0), tmp_4);
+        }
         Euler_stage = EquationData::P_INDEX_SYSTEM;
         const std::vector<unsigned> index_dof_handler = {EquationData::P_INDEX_DOF};
         tmp_matrix->initialize(tmp_matrix->get_matrix_free(), index_dof_handler, index_dof_handler);
@@ -2312,6 +2374,113 @@ namespace Atmospheric_Flow {
                      this, dst, src, true,
                      MatrixFree<dim, Number>::DataAccessOnFaces::values,
                      MatrixFree<dim, Number>::DataAccessOnFaces::values);
+  }
+
+
+  // Assemble cell term for the contribution due to gravity in the energy equation
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_cell_term_gravity(const MatrixFree<dim, Number>&       data,
+                             Vec&                                 dst,
+                             const Vec&                           src,
+                             const std::pair<unsigned, unsigned>& cell_range) const {
+    // We first start by declaring the suitable instances to read also available quantities.
+    // Since here we have just one 'src' vector, but we also need to deal with the current density,
+    // we employ the auxiliary vector 'rho_for_fixed' where we setted this information
+    FEEvaluation_pres phi(data, EquationData::P_INDEX_DOF);
+    FEEvaluation_u    phi_src(data, EquationData::U_INDEX_DOF);
+    FEEvaluation_rho  phi_rho_for_fixed(data, EquationData::RHO_INDEX_DOF);
+
+    // Loop over all cells
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi_rho_for_fixed.reinit(cell);
+      phi_rho_for_fixed.gather_evaluate(rho_for_fixed, EvaluationFlags::values);
+
+      phi_src.reinit(cell);
+      phi_src.gather_evaluate(src, EvaluationFlags::values);
+
+      phi.reinit(cell);
+
+      // Loop over all quadrature points
+      for(const unsigned q : phi.quadrature_point_indices()) {
+        phi.submit_value(a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                         (Ma2_ov_Fr2*phi_rho_for_fixed.get_value(q)*phi_src.get_value(q)[EquationData::n_comp_u - 1]), q);
+      }
+
+      phi.integrate_scatter(EvaluationFlags::values, dst);
+    }
+  }
+
+  // Apply (I + beta J)^{-1} for the Coriolis force at the current stage
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  assemble_inverse_rotation(const MatrixFree<dim, Number>&       data,
+                            Vec&                                 dst,
+                            const Vec&                           src,
+                            const std::pair<unsigned, unsigned>& cell_range) const {
+    FEEvaluation_u phi(data, EquationData::U_INDEX_DOF);
+
+    const auto beta = a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*inv_Ro;
+
+    // Loop over all cells
+    for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
+      phi.reinit(cell);
+      phi.read_dof_values(src);
+
+      // J acts only among the velocity components, so that the inverse can be applied
+      // independently for each degree of freedom
+      for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
+        phi.submit_dof_value(Rotation::inverse_rotation_term(phi.get_dof_value(i), beta), i);
+      }
+
+      phi.set_dof_values(dst);
+    }
+  }
+
+  // Application of gravity matrix
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  vmult_gravity(Vec& dst, const Vec& src) const {
+    src.update_ghost_values();
+
+    this->data->cell_loop(&EULEROperator::assemble_cell_term_gravity,
+                          this, dst, src, true);
+  }
+
+  // Application of (I + beta J)^{-1}
+  //
+  template<unsigned dim,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
+           unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
+           typename Vec>
+  void EULEROperator<dim,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
+                     n_q_points_1d, n_q_points_1d_boundary,
+                     Vec>::
+  vmult_inverse_rotation(Vec& dst, const Vec& src) const {
+    this->data->cell_loop(&EULEROperator::assemble_inverse_rotation,
+                          this, dst, src, true);
   }
 
 

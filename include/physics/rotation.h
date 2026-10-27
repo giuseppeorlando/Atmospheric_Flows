@@ -39,9 +39,17 @@ namespace Rotation {
   /**
    * Available formulations for the rotation term:
    * - none: no rotation;
-   * - R1: the Coriolis force at the current stage is treated through the fixed point loop.
+   * - R1: the Coriolis force at the current stage is treated through the fixed point loop;
+   * - R2: the Coriolis force at the current stage is included in the linear system for the pressure
+   *       through (A + R)^{-1} = (I + beta J)^{-1} A^{-1}, with beta = a_tilde*dt/Ro (see inverse_rotation_term).
+   *       Moreover, also the gravity term of the energy equation at the current stage is included
+   *       in the linear system for the pressure.
+   *       WARNING: the implicit part of the Coriolis force acts on the velocity and not on the
+   *       velocity relative to the background velocity. Hence, this formulation is consistent
+   *       only for a background state at rest (e.g. inertia-gravity waves). Pay attention
+   *       in presence of a non-zero background velocity!
    */
-  enum class Formulation {none, R1};
+  enum class Formulation {none, R1, R2};
 
   /**
    * Convert the name of the formulation (as read from the parameter file) into the corresponding enumeration
@@ -54,6 +62,9 @@ namespace Rotation {
     }
     else if(name == "R1") {
       return Formulation::R1;
+    }
+    else if(name == "R2") {
+      return Formulation::R2;
     }
     else {
       AssertThrow(false, ExcMessage("Unknown formulation for the rotation term: " + name));
@@ -78,6 +89,27 @@ namespace Rotation {
     Tensor<1, EquationData::n_comp_u, Number> res;
     res[0] = -inv_Ro*rho*u_rel[1];
     res[1] = inv_Ro*rho*u_rel[0];
+
+    return res;
+  }
+
+  /**
+   * Inverse of (I + beta J), with J the matrix associated to k x u, i.e. J(u, v, w) = (-v, u, 0).
+   * Since J acts only among the velocity components, this can be applied independently for each degree of freedom
+   * @param v velocity components associated to a degree of freedom
+   * @param beta coefficient of J (a_tilde*dt/Ro)
+   * @return (I + beta J)^{-1} v
+   */
+  template<typename Number, typename T>
+  inline DEAL_II_ALWAYS_INLINE
+  Tensor<1, EquationData::n_comp_u, Number> inverse_rotation_term(const Tensor<1, EquationData::n_comp_u, Number>& v,
+                                                                  const T beta) {
+    const auto s = static_cast<T>(1.0)/(static_cast<T>(1.0) + beta*beta);
+
+    Tensor<1, EquationData::n_comp_u, Number> res;
+    res[0] = s*(v[0] + beta*v[1]);
+    res[1] = s*(v[1] - beta*v[0]);
+    res[2] = v[2];
 
     return res;
   }
