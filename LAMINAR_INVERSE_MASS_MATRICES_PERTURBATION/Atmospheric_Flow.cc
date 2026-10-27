@@ -548,14 +548,17 @@ void EulerSolver<dim>::create_triangulation(const RunTimeParameters::Data_Storag
     triangulation.refine_global(data.n_global_refines);
   }
 
-  // Apply the mapping to build the physical domain
-  GridTools::transform([this](const Point<dim, Number>& chart_point) {
-                                return manifold.push_forward(chart_point);
-                              },
-                              triangulation);
+  // Apply the mapping to build the physical domain (only meaningful for a
+  // test case that actually provides mountain_data)
+  if(tc->has_mountain_data) {
+    GridTools::transform([this](const Point<dim, Number>& chart_point) {
+                                  return manifold->push_forward(chart_point);
+                                },
+                                triangulation);
 
-  triangulation.set_all_manifold_ids_on_boundary(2*(dim - 1), 111);
-  triangulation.set_manifold(111, manifold);
+    triangulation.set_all_manifold_ids_on_boundary(2*(dim - 1), 111);
+    triangulation.set_manifold(111, *manifold);
+  }
 }
 
 // After creating the triangulation, it creates the mesh dependent
@@ -1450,43 +1453,51 @@ void EulerSolver<dim>::run(const bool verbose,
       // Apply the damping layer for the vertical component
       rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho);
       rho_s.front().scale(*dt_tau_rho_aux);
-      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u);
-      u_s.front().scale(*dt_tau_u_aux);
-      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres);
-      pres_s.front().scale(*dt_tau_pres_aux);
+      u_old.add(static_cast<Number>(1.0), *dt_tau_u);
+      u_old.scale(*dt_tau_u_aux);
+      pres_old.add(static_cast<Number>(1.0), *dt_tau_pres);
+      pres_old.scale(*dt_tau_pres_aux);
 
       // Apply the damping layer for the right lateral part
       rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_right);
       rho_s.front().scale(*dt_tau_rho_aux_right);
-      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_right);
-      u_s.front().scale(*dt_tau_u_aux_right);
-      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_right);
-      pres_s.front().scale(*dt_tau_pres_aux_right);
+      u_old.add(static_cast<Number>(1.0), *dt_tau_u_right);
+      u_old.scale(*dt_tau_u_aux_right);
+      pres_old.add(static_cast<Number>(1.0), *dt_tau_pres_right);
+      pres_old.scale(*dt_tau_pres_aux_right);
 
       // Apply the damping layer for the left lateral part
       rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_left);
       rho_s.front().scale(*dt_tau_rho_aux_left);
-      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_left);
-      u_s.front().scale(*dt_tau_u_aux_left);
-      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_left);
-      pres_s.front().scale(*dt_tau_pres_aux_left);
+      u_old.add(static_cast<Number>(1.0), *dt_tau_u_left);
+      u_old.scale(*dt_tau_u_aux_left);
+      pres_old.add(static_cast<Number>(1.0), *dt_tau_pres_left);
+      pres_old.scale(*dt_tau_pres_aux_left);
 
       // Apply the damping layer for the right y lateral part
       rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_right_y);
       rho_s.front().scale(*dt_tau_rho_aux_right_y);
-      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_right_y);
-      u_s.front().scale(*dt_tau_u_aux_right_y);
-      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_right_y);
-      pres_s.front().scale(*dt_tau_pres_aux_right_y);
+      u_old.add(static_cast<Number>(1.0), *dt_tau_u_right_y);
+      u_old.scale(*dt_tau_u_aux_right_y);
+      pres_old.add(static_cast<Number>(1.0), *dt_tau_pres_right_y);
+      pres_old.scale(*dt_tau_pres_aux_right_y);
 
       // Apply the damping layer for the left y lateral part
       rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_left_y);
       rho_s.front().scale(*dt_tau_rho_aux_left_y);
-      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_left_y);
-      u_s.front().scale(*dt_tau_u_aux_left_y);
-      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_left_y);
-      pres_s.front().scale(*dt_tau_pres_aux_left_y);
+      u_old.add(static_cast<Number>(1.0), *dt_tau_u_left_y);
+      u_old.scale(*dt_tau_u_aux_left_y);
+      pres_old.add(static_cast<Number>(1.0), *dt_tau_pres_left_y);
+      pres_old.scale(*dt_tau_pres_aux_left_y);
     }
+
+    // Update density, velocity, and pressure perturbations for the next step
+    rho_prime_s.front().equ(static_cast<Number>(1.0), rho_s.front());
+    rho_prime_s.front().add(static_cast<Number>(-1.0), rho_bar);
+    u_prime_s.front().equ(static_cast<Number>(1.0), u_old);
+    u_prime_s.front().add(static_cast<Number>(-1.0), u_bar);
+    pres_prime_s.front().equ(static_cast<Number>(1.0), pres_old);
+    pres_prime_s.front().add(static_cast<Number>(-1.0), pres_bar);
 
     // Compute auxiliary post-processing data
     const auto max_celerity = inv_Ma*compute_max_celerity();
