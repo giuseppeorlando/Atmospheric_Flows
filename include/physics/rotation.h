@@ -44,10 +44,27 @@ namespace Rotation {
    *       through (A + R)^{-1} = (I + beta J)^{-1} A^{-1}, with beta = a_tilde*dt/Ro (see inverse_rotation_term).
    *       Moreover, also the gravity term of the energy equation at the current stage is included
    *       in the linear system for the pressure.
-   *       WARNING: the implicit part of the Coriolis force acts on the velocity and not on the
-   *       velocity relative to the background velocity. Hence, this formulation is consistent
-   *       only for a background state at rest (e.g. inertia-gravity waves). Pay attention
-   *       in presence of a non-zero background velocity!
+   *       WARNING: possible inconsistency in presence of a non-zero background velocity u_bar.
+   *       The Coriolis force acts on the velocity relative to the background velocity, so that,
+   *       at the current stage, the momentum equation reads
+   *         rho*u + a_tilde*dt*(1/Ro)*rho*(k x (u - u_bar)) = rhs.
+   *       Since u_bar is known, only the part acting on u has to be treated implicitly through
+   *       (I + beta J), whereas the known contribution a_tilde*dt*(1/Ro)*rho*(k x u_bar) has to be
+   *       moved to the rhs:
+   *         rho*u + a_tilde*dt*(1/Ro)*rho*(k x u) = rhs + a_tilde*dt*(1/Ro)*rho*(k x u_bar).
+   *       This contribution is currently not included (as in the original implementation), so that
+   *       the Coriolis force at the current stage acts on u instead of u - u_bar. Hence, the formulation
+   *       is consistent only for a background state at rest (e.g. inertia-gravity waves), whereas for
+   *       u_bar != 0 (e.g. flows over mountains) a spurious Coriolis force is introduced.
+   *       Possible solution: add, for the R2 formulation, the known contribution at the current stage
+   *       to the rhs of the momentum equation (in EULEROperator::assemble_rhs_cell_term_momentum,
+   *       next to the corresponding contribution of the R1 formulation):
+   *         if(rotation == Rotation::Formulation::R2) {
+   *           rotation_term -= a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+   *                            Rotation::coriolis_term(rho_s, phi_u_bar.get_value(q), inv_Ro);
+   *         }
+   *       ('rotation_term' is subtracted from the rhs, hence the minus sign). With this correction,
+   *       R1 and R2 should coincide at convergence of the fixed point loop also for u_bar != 0.
    */
   enum class Formulation {none, R1, R2};
 

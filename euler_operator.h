@@ -1203,7 +1203,9 @@ namespace Atmospheric_Flow {
           gravity_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Fr2*rho_s*e_k);
 
           // Add last contribution of the rotation term. For the R1 formulation, the current velocity
-          // is taken from the fixed point loop
+          // is taken from the fixed point loop. For the R2 formulation, the known contribution of the
+          // background velocity at the current stage should be added here, but it is currently not
+          // included (see the description of the R2 formulation in include/physics/rotation.h)
           if(rotation == Rotation::Formulation::R1) {
             rotation_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
                              Rotation::coriolis_term(rho_s, phi_u_fixed.get_value(q) - phi_u_bar.get_value(q), inv_Ro);
