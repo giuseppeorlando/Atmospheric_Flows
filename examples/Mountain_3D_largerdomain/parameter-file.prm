@@ -1,0 +1,85 @@
+# Three-dimensional test case. Run from the root of the repository, e.g.
+#   mpirun -np <n> ./build/Atmospheric_Flow -p examples/Mountain_3D_largerdomain/parameter-file.prm
+
+# NOTE: in the branch rotation this configuration was run with the initial conditions
+# of the non-hydrostatic mountain (constant buoyancy frequency N = 0.02). Here the isothermal
+# atmosphere of the hydrostatic mountain is employed (N = g/sqrt(cp*T_bar), approximately 0.0198).
+# Set 'test_case = 3D non-hydrostatic mountain' (and N = 0.02 in the file of the test case)
+# to reproduce the original configuration.
+
+subsection Test case
+  # In this subsection we specify the test case
+  set test_case = 3D hydrostatic mountain
+  set test_case_parameters = examples/Mountain_3D_largerdomain/ic_3D_hydrostatic.prm
+end
+
+subsection Physical data
+  # In this subsection we declare the physical data
+  set initial_time = 0.0
+  set final_time   = 288.0
+
+  set x_min = 0.0
+  set y_min = 0.0
+  set z_min = 0.0
+  set x_max = 240000.0
+  set y_max = 240000.0
+  set z_max = 30000.0
+
+  set Mach   = 1
+  set Froude = 0.319275428407050
+
+  set Rossby               = 10000
+  set rotation_formulation = R1
+
+  set L_ref   = 1.0 # Reference length to build non-dimensional domain
+  set u_ref   = 1.0 # Reference velocity for non-dimensional variables
+  set p_ref   = 1.0 # Reference pressure for non-dimensional variables
+  set rho_ref = 1.0 # Reference density for non-dimensional variables
+end
+
+subsection Numerical data
+  # In this subsection we declare some numerical data
+  # (time step and fixed point iteration tolerance)
+  set dt = 4
+
+  # Fixed point tolerances
+  set atol_fixed_point = 0.0
+  set rtol_fixed_point = 1e-12
+end
+
+subsection Mesh parameters
+  # In this subsection we declare the data that is relevant to the domain discretization
+  set n_elements_x = 25 # number of (initial) elements along x direction
+  set n_elements_y = 25 # number of (initial) elements along y direction
+  set n_elements_z = 25 # number of (initial) elements along z direction
+  set n_of_refines = 1  # number of global refines of the initial triangulation
+end
+
+subsection Data linear solvers
+  # In this section we declare the parameters that are going to control the solution process.
+  set max_iterations = 30000 # maximum number of iterations
+  set atol_iterative = 0.0   # absolute tolerance linear solvers
+  set rtol_iterative = 1e-14 # relative tolerance linear solvers
+end
+
+subsection Restart data
+  #Set whether we are in presence of a restart or not
+  set restart = false
+
+  #Set if you want to save files for possible restart
+  set save_for_restart = false
+
+  #Set if you want to use the saved data for initial conditions
+  set as_initial_conditions = true
+end
+
+subsection Output data
+  # The directory where results are saved
+  set saving directory = 3D_MELVIN_NONHYDROSTATIC_UNIFORM_INVERSE_MASS_MATRIX
+
+  # The output frequency
+  set output_interval = 100
+
+  # Finally we set the verbosity level
+  set verbose = true
+end

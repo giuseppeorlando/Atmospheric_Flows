@@ -1,0 +1,10 @@
+subsection Physical data
+  # In this subsection we declare the physical data for the specific configuration
+  set H  = 10000.0 # Vertical scale of the perturbation (height of the domain)
+  set xc = 30000000.0 # x-center of the perturbation
+  set ac = 1000000.0 # Semi-width of the perturbation
+
+  set u_bar = 0.0      # Background horizontal velocity
+  set p_bar = 100000.0 # Background pressure (z = 0)
+  set T_bar = 250.0    # Background temperature (constant)
+end

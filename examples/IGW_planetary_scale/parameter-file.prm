@@ -1,0 +1,79 @@
+# Two-dimensional test case (vertical slice in the x-z plane):
+# set 'constexpr unsigned dim = 2' in main() of Atmospheric_Flow.cc and recompile.
+# Run from the root of the repository, e.g.
+#   mpirun -np <n> ./build/Atmospheric_Flow -p examples/IGW_planetary_scale/parameter-file.prm
+
+subsection Test case
+  # In this subsection we specify the test case
+  set test_case = inertia-gravity waves
+  set test_case_parameters = examples/IGW_planetary_scale/ic_IGW.prm
+end
+
+subsection Physical data
+  # In this subsection we declare the physical data
+  set initial_time = 0.0
+  set final_time   = 345600
+
+  set x_min = 0.0
+  set z_min = 0.0
+  set x_max = 60000000.0
+  set z_max = 10000.0
+
+  set Mach   = 1
+  set Froude = 0.319275428407050
+
+  set Rossby               = 9696.87
+  set rotation_formulation = R1
+
+  set L_ref   = 1.0 # Reference length to build non-dimensional domain
+  set u_ref   = 1.0 # Reference velocity for non-dimensional variables
+  set p_ref   = 1.0 # Reference pressure for non-dimensional variables
+                    # (the initial conditions are normalized with p_ref and rho_ref)
+  set rho_ref = 1.0 # Reference density for non-dimensional variables
+end
+
+subsection Numerical data
+  # In this subsection we declare some numerical data
+  # (time step and fixed point iteration tolerance)
+  set dt = 10
+
+  # Fixed point tolerances
+  set atol_fixed_point = 0.0
+  set rtol_fixed_point = 1e-14
+end
+
+subsection Mesh parameters
+  # In this subsection we declare the data that is relevant to the domain discretization
+  set n_elements_x = 150 # number of (initial) elements along x direction
+  set n_elements_z = 10  # number of (initial) elements along z direction
+  set n_of_refines = 1   # number of global refines of the initial triangulation
+end
+
+subsection Data linear solvers
+  # In this section we declare the parameters that are going to control the solution process.
+  set max_iterations = 30000 # maximum number of iterations
+  set atol_iterative = 0.0   # absolute tolerance linear solvers
+  set rtol_iterative = 1e-16  # relative tolerance linear solvers
+end
+
+subsection Restart data
+  #Set whether we are in presence of a restart or not
+  set restart = false
+
+  #Set if you want to save files for possible restart
+  set save_for_restart = false
+
+  #Set if you want to use the saved data for initial conditions
+  set as_initial_conditions = true
+end
+
+subsection Output data
+  # The directory where results are saved
+  set saving directory = INERTIA_GRAVITY_WAVES_INVERSE_MASS_MATRIX
+
+  # The output frequency
+  set output_interval = 100
+
+  # Finally we set the verbosity level
+  set verbose = true
+end
