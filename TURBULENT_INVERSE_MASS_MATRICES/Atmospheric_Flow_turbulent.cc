@@ -18,6 +18,8 @@
 #include <filesystem>
 namespace fs = std::filesystem;
 
+#include <optional>
+
 // We start by including all the necessary deal.II header files
 //
 #include <deal.II/base/parallel.h>
@@ -164,41 +166,47 @@ protected:
   std::vector<Vec> theta_s;
   Vec rhs_theta;
 
-  // Damping layers functions for all the unknowns
-  Vec dt_tau_rho;
-  Vec dt_tau_u;
-  Vec dt_tau_pres;
-  Vec dt_tau_rho_aux;
-  Vec dt_tau_u_aux;
-  Vec dt_tau_pres_aux;
+  // Damping layers functions for all the unknowns.
+  // These only make sense for a test case that actually provides
+  // mountain_data; std::optional means they are genuinely not constructed
+  // otherwise, rather than being built with harmless-looking default values.
+  // Built in the constructor body (via .emplace(...)) once tc is available,
+  // instead of the member-initializer-list, since a default-constructed
+  // std::optional needs no arguments up front.
+  std::optional<Vec> dt_tau_rho;
+  std::optional<Vec> dt_tau_u;
+  std::optional<Vec> dt_tau_pres;
+  std::optional<Vec> dt_tau_rho_aux;
+  std::optional<Vec> dt_tau_u_aux;
+  std::optional<Vec> dt_tau_pres_aux;
 
-  Vec dt_tau_rho_right;
-  Vec dt_tau_u_right;
-  Vec dt_tau_pres_right;
-  Vec dt_tau_rho_aux_right;
-  Vec dt_tau_u_aux_right;
-  Vec dt_tau_pres_aux_right;
+  std::optional<Vec> dt_tau_rho_right;
+  std::optional<Vec> dt_tau_u_right;
+  std::optional<Vec> dt_tau_pres_right;
+  std::optional<Vec> dt_tau_rho_aux_right;
+  std::optional<Vec> dt_tau_u_aux_right;
+  std::optional<Vec> dt_tau_pres_aux_right;
 
-  Vec dt_tau_rho_left;
-  Vec dt_tau_u_left;
-  Vec dt_tau_pres_left;
-  Vec dt_tau_rho_aux_left;
-  Vec dt_tau_u_aux_left;
-  Vec dt_tau_pres_aux_left;
+  std::optional<Vec> dt_tau_rho_left;
+  std::optional<Vec> dt_tau_u_left;
+  std::optional<Vec> dt_tau_pres_left;
+  std::optional<Vec> dt_tau_rho_aux_left;
+  std::optional<Vec> dt_tau_u_aux_left;
+  std::optional<Vec> dt_tau_pres_aux_left;
 
-  Vec dt_tau_rho_right_y;
-  Vec dt_tau_u_right_y;
-  Vec dt_tau_pres_right_y;
-  Vec dt_tau_rho_aux_right_y;
-  Vec dt_tau_u_aux_right_y;
-  Vec dt_tau_pres_aux_right_y;
+  std::optional<Vec> dt_tau_rho_right_y;
+  std::optional<Vec> dt_tau_u_right_y;
+  std::optional<Vec> dt_tau_pres_right_y;
+  std::optional<Vec> dt_tau_rho_aux_right_y;
+  std::optional<Vec> dt_tau_u_aux_right_y;
+  std::optional<Vec> dt_tau_pres_aux_right_y;
 
-  Vec dt_tau_rho_left_y;
-  Vec dt_tau_u_left_y;
-  Vec dt_tau_pres_left_y;
-  Vec dt_tau_rho_aux_left_y;
-  Vec dt_tau_u_aux_left_y;
-  Vec dt_tau_pres_aux_left_y;
+  std::optional<Vec> dt_tau_rho_left_y;
+  std::optional<Vec> dt_tau_u_left_y;
+  std::optional<Vec> dt_tau_pres_left_y;
+  std::optional<Vec> dt_tau_rho_aux_left_y;
+  std::optional<Vec> dt_tau_u_aux_left_y;
+  std::optional<Vec> dt_tau_pres_aux_left_y;
 
   // Auxiliary structures for the matrix-free
   std::shared_ptr<MatrixFree<dim, Number>> matrix_free_storage;
@@ -215,37 +223,40 @@ protected:
   // Auxiliary variable to set the test case
   std::unique_ptr<TestCaseBase<dim, Number>> tc;
 
-  // Manifold (mapping) data structures
-  GalChenMapping::PushForward<dim, Number> push_forward;
-  GalChenMapping::PullBack<dim, Number>    pull_back;
-  FunctionManifold<dim, dim, dim>          manifold;
+  // Manifold (mapping) data structures. These only make sense for a test
+  // case that actually provides mountain_data (see comment above)
+  std::optional<GalChenMapping::PushForward<dim, Number>> push_forward;
+  std::optional<GalChenMapping::PullBack<dim, Number>>    pull_back;
+  std::optional<FunctionManifold<dim, dim, dim>>          manifold;
 
-  // Functions for the Rayleigh damping profile
-  RayleighDamping::Rayleigh<dim, 1, Number>       dt_tau;
-  RayleighDamping::Rayleigh_Aux<dim, 1, Number>   dt_tau_aux;
-  RayleighDamping::Rayleigh<dim, dim, Number>     dt_tau_vel;
-  RayleighDamping::Rayleigh_Aux<dim, dim, Number> dt_tau_vel_aux;
+  // Functions for the Rayleigh damping profile (see comment above: only
+  // constructed - via .emplace(...) in the constructor body - if
+  // tc->has_mountain_data is true)
+  std::optional<RayleighDamping::Rayleigh<dim, 1, Number>>       dt_tau;
+  std::optional<RayleighDamping::Rayleigh_Aux<dim, 1, Number>>   dt_tau_aux;
+  std::optional<RayleighDamping::Rayleigh<dim, dim, Number>>     dt_tau_vel;
+  std::optional<RayleighDamping::Rayleigh_Aux<dim, dim, Number>> dt_tau_vel_aux;
 
-  RayleighDamping::Rayleigh_Right<dim, 1, Number>       dt_tau_right;
-  RayleighDamping::Rayleigh_Aux_Right<dim, 1, Number>   dt_tau_aux_right;
-  RayleighDamping::Rayleigh_Right<dim, dim, Number>     dt_tau_vel_right;
-  RayleighDamping::Rayleigh_Aux_Right<dim, dim, Number> dt_tau_vel_aux_right;
+  std::optional<RayleighDamping::Rayleigh_Right<dim, 1, Number>>       dt_tau_right;
+  std::optional<RayleighDamping::Rayleigh_Aux_Right<dim, 1, Number>>   dt_tau_aux_right;
+  std::optional<RayleighDamping::Rayleigh_Right<dim, dim, Number>>     dt_tau_vel_right;
+  std::optional<RayleighDamping::Rayleigh_Aux_Right<dim, dim, Number>> dt_tau_vel_aux_right;
 
-  RayleighDamping::Rayleigh_Left<dim, 1, Number>       dt_tau_left;
-  RayleighDamping::Rayleigh_Aux_Left<dim, 1, Number>   dt_tau_aux_left;
-  RayleighDamping::Rayleigh_Left<dim, dim, Number>     dt_tau_vel_left;
-  RayleighDamping::Rayleigh_Aux_Left<dim, dim, Number> dt_tau_vel_aux_left;
+  std::optional<RayleighDamping::Rayleigh_Left<dim, 1, Number>>       dt_tau_left;
+  std::optional<RayleighDamping::Rayleigh_Aux_Left<dim, 1, Number>>   dt_tau_aux_left;
+  std::optional<RayleighDamping::Rayleigh_Left<dim, dim, Number>>     dt_tau_vel_left;
+  std::optional<RayleighDamping::Rayleigh_Aux_Left<dim, dim, Number>> dt_tau_vel_aux_left;
 
-  RayleighDamping::Rayleigh_RightY<dim, 1, Number>       dt_tau_right_y;
-  RayleighDamping::Rayleigh_Aux_RightY<dim, 1, Number>   dt_tau_aux_right_y;
-  RayleighDamping::Rayleigh_RightY<dim, dim, Number>     dt_tau_vel_right_y;
-  RayleighDamping::Rayleigh_Aux_RightY<dim, dim, Number> dt_tau_vel_aux_right_y;
+  std::optional<RayleighDamping::Rayleigh_RightY<dim, 1, Number>>       dt_tau_right_y;
+  std::optional<RayleighDamping::Rayleigh_Aux_RightY<dim, 1, Number>>   dt_tau_aux_right_y;
+  std::optional<RayleighDamping::Rayleigh_RightY<dim, dim, Number>>     dt_tau_vel_right_y;
+  std::optional<RayleighDamping::Rayleigh_Aux_RightY<dim, dim, Number>> dt_tau_vel_aux_right_y;
 
-  RayleighDamping::Rayleigh_LeftY<dim, 1, Number>       dt_tau_left_y;
-  RayleighDamping::Rayleigh_Aux_LeftY<dim, 1, Number>   dt_tau_aux_left_y;
-  RayleighDamping::Rayleigh_LeftY<dim, dim, Number>     dt_tau_vel_left_y;
-  RayleighDamping::Rayleigh_Aux_LeftY<dim, dim, Number> dt_tau_vel_aux_left_y;
-
+  std::optional<RayleighDamping::Rayleigh_LeftY<dim, 1, Number>>       dt_tau_left_y;
+  std::optional<RayleighDamping::Rayleigh_Aux_LeftY<dim, 1, Number>>   dt_tau_aux_left_y;
+  std::optional<RayleighDamping::Rayleigh_LeftY<dim, dim, Number>>     dt_tau_vel_left_y;
+  std::optional<RayleighDamping::Rayleigh_Aux_LeftY<dim, dim, Number>> dt_tau_vel_aux_left_y;
+  
   // Now we declare a bunch of variables for output
   fs::path saving_dir; /*!< Auxiliary variable for the directory to save the results */
 
@@ -384,32 +395,8 @@ EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
   theta_s(n_stages),
   dof_handlers(EquationData::n_vars),
   constraints(EquationData::n_vars),
-  /*--- Domain ---*/
+  /*--- Test case ---*/
   tc(make_test_case<dim, Number>(data.tc_name, data.tc_param_file, data)),
-  push_forward(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
-  pull_back(data.z_max, tc->mountain_data->h, tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref),
-  manifold(push_forward, pull_back),
-  /*--- Boundary condition (Rayleigh damping) ---*/
-  dt_tau(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
-  dt_tau_aux(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
-  dt_tau_vel(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
-  dt_tau_vel_aux(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref),
-  dt_tau_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
-  dt_tau_aux_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
-  dt_tau_vel_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
-  dt_tau_vel_aux_right(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref),
-  dt_tau_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
-  dt_tau_aux_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
-  dt_tau_vel_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
-  dt_tau_vel_aux_left(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref),
-  dt_tau_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
-  dt_tau_aux_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
-  dt_tau_vel_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
-  dt_tau_vel_aux_right_y(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref),
-  dt_tau_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
-  dt_tau_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
-  dt_tau_vel_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
-  dt_tau_vel_aux_left_y(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref),
   /*--- Output ---*/
   saving_dir(data.dir),
   pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0),
@@ -431,6 +418,45 @@ EulerSolver<dim>::EulerSolver(RunTimeParameters::Data_Storage& data,
   {
     // Check the created test case
     pcout << "Selected test case: " << data.tc_name << std::endl;
+
+    // tc (built above in the initializer list) already carries
+    // mountain_data/has_mountain_data. Only now - here in the body, where
+    // .emplace(...) can be called conditionally - do we actually build
+    // push_forward/pull_back/manifold/dt_tau*, and only if the test case
+    // opted in. If it didn't, these stay std::nullopt and they are never
+    // constructed.
+    if(tc->has_mountain_data) {
+      push_forward.emplace(data.z_max, tc->mountain_data->h,
+                           tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref);
+      pull_back.emplace(data.z_max, tc->mountain_data->h,
+                        tc->mountain_data->xc, tc->mountain_data->yc, tc->mountain_data->ac, data.L_ref);
+      manifold.emplace(*push_forward, *pull_back);
+
+      dt_tau.emplace(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref);
+      dt_tau_aux.emplace(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref);
+      dt_tau_vel.emplace(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref);
+      dt_tau_vel_aux.emplace(tc->mountain_data->z_start, data.z_max, tc->mountain_data->lambda_z, data.L_ref);
+
+      dt_tau_right.emplace(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref);
+      dt_tau_aux_right.emplace(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref);
+      dt_tau_vel_right.emplace(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref);
+      dt_tau_vel_aux_right.emplace(tc->mountain_data->x_start_right, data.x_max, tc->mountain_data->lambda_x_right, data.L_ref);
+
+      dt_tau_left.emplace(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref);
+      dt_tau_aux_left.emplace(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref);
+      dt_tau_vel_left.emplace(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref);
+      dt_tau_vel_aux_left.emplace(tc->mountain_data->x_start_left, data.x_min, tc->mountain_data->lambda_x_left, data.L_ref);
+
+      dt_tau_right_y.emplace(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref);
+      dt_tau_aux_right_y.emplace(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref);
+      dt_tau_vel_right_y.emplace(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref);
+      dt_tau_vel_aux_right_y.emplace(tc->mountain_data->y_start_right, data.y_max, tc->mountain_data->lambda_y_right, data.L_ref);
+
+      dt_tau_left_y.emplace(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref);
+      dt_tau_aux_left_y.emplace(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref);
+      dt_tau_vel_left_y.emplace(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref);
+      dt_tau_vel_aux_left_y.emplace(tc->mountain_data->y_start_left, data.y_min, tc->mountain_data->lambda_y_left, data.L_ref);
+    }
 
     // Check time step coherence
     if(data.CFL.empty()) {
@@ -534,14 +560,17 @@ void EulerSolver<dim>::create_triangulation(const RunTimeParameters::Data_Storag
     triangulation.refine_global(data.n_global_refines);
   }
 
-  // Apply the mapping to build the physical domain
-  GridTools::transform([this](const Point<dim, Number>& chart_point) {
-                                return manifold.push_forward(chart_point);
-                              },
-                              triangulation);
+  // Apply the mapping to build the physical domain (only meaningful for a
+  // test case that actually provides mountain_data)
+  if(tc->has_mountain_data) {
+    GridTools::transform([this](const Point<dim, Number>& chart_point) {
+                                  return manifold->push_forward(chart_point);
+                                },
+                                triangulation);
 
-  triangulation.set_all_manifold_ids_on_boundary(2*(dim - 1), 111);
-  triangulation.set_manifold(111, manifold);
+    triangulation.set_all_manifold_ids_on_boundary(2*(dim - 1), 111);
+    triangulation.set_manifold(111, *manifold);
+  }
 }
 
 // After creating the triangulation, it creates the mesh dependent
@@ -639,72 +668,107 @@ void EulerSolver<dim>::setup_dofs() {
   matrix_free_storage->initialize_dof_vector(rhs_pres_precomputed, EquationData::P_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(extra_rhs_u, EquationData::U_INDEX_DOF);
 
-  // Initialize the variables related to the damping layers
-  matrix_free_storage->initialize_dof_vector(dt_tau_u, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho, EquationData::RHO_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_aux, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_aux, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_aux, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(mapping, dof_handler_velocity, dt_tau_vel, dt_tau_u);
-  VectorTools::interpolate(mapping, dof_handler_pressure, dt_tau, dt_tau_pres);
-  VectorTools::interpolate(mapping, dof_handler_density, dt_tau, dt_tau_rho);
-  VectorTools::interpolate(mapping, dof_handler_velocity, dt_tau_vel_aux, dt_tau_u_aux);
-  VectorTools::interpolate(mapping, dof_handler_pressure, dt_tau_aux, dt_tau_pres_aux);
-  VectorTools::interpolate(mapping, dof_handler_density, dt_tau_aux, dt_tau_rho_aux);
+  // Initialize the variables related to the damping layers (only if the
+  // test case actually provides mountain_data; otherwise these vectors
+  // are simply never sized/filled)
+  if(tc->has_mountain_data) {
+    dt_tau_u.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u, EquationData::U_INDEX_DOF);
+    dt_tau_pres.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres, EquationData::P_INDEX_DOF);
+    dt_tau_rho.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho, EquationData::RHO_INDEX_DOF);
+    dt_tau_u_aux.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_aux, EquationData::U_INDEX_DOF);
+    dt_tau_pres_aux.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_aux, EquationData::P_INDEX_DOF);
+    dt_tau_rho_aux.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_aux, EquationData::RHO_INDEX_DOF);
+    VectorTools::interpolate(mapping, dof_handler_velocity, *dt_tau_vel, *dt_tau_u);
+    VectorTools::interpolate(mapping, dof_handler_pressure, *dt_tau, *dt_tau_pres);
+    VectorTools::interpolate(mapping, dof_handler_density, *dt_tau, *dt_tau_rho);
+    VectorTools::interpolate(mapping, dof_handler_velocity, *dt_tau_vel_aux, *dt_tau_u_aux);
+    VectorTools::interpolate(mapping, dof_handler_pressure, *dt_tau_aux, *dt_tau_pres_aux);
+    VectorTools::interpolate(mapping, dof_handler_density, *dt_tau_aux, *dt_tau_rho_aux);
 
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_right, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_right, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_right, EquationData::RHO_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_aux_right, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_aux_right, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_aux_right, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(mapping, dof_handler_velocity, dt_tau_vel_right, dt_tau_u_right);
-  VectorTools::interpolate(mapping, dof_handler_pressure, dt_tau_right, dt_tau_pres_right);
-  VectorTools::interpolate(mapping, dof_handler_density, dt_tau_right, dt_tau_rho_right);
-  VectorTools::interpolate(mapping, dof_handler_velocity, dt_tau_vel_aux_right, dt_tau_u_aux_right);
-  VectorTools::interpolate(mapping, dof_handler_pressure, dt_tau_aux_right, dt_tau_pres_aux_right);
-  VectorTools::interpolate(mapping, dof_handler_density, dt_tau_aux_right, dt_tau_rho_aux_right);
+    dt_tau_u_right.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_right, EquationData::U_INDEX_DOF);
+    dt_tau_pres_right.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_right, EquationData::P_INDEX_DOF);
+    dt_tau_rho_right.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_right, EquationData::RHO_INDEX_DOF);
+    dt_tau_u_aux_right.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_aux_right, EquationData::U_INDEX_DOF);
+    dt_tau_pres_aux_right.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_aux_right, EquationData::P_INDEX_DOF);
+    dt_tau_rho_aux_right.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_aux_right, EquationData::RHO_INDEX_DOF);
+    VectorTools::interpolate(mapping, dof_handler_velocity, *dt_tau_vel_right, *dt_tau_u_right);
+    VectorTools::interpolate(mapping, dof_handler_pressure, *dt_tau_right, *dt_tau_pres_right);
+    VectorTools::interpolate(mapping, dof_handler_density, *dt_tau_right, *dt_tau_rho_right);
+    VectorTools::interpolate(mapping, dof_handler_velocity, *dt_tau_vel_aux_right, *dt_tau_u_aux_right);
+    VectorTools::interpolate(mapping, dof_handler_pressure, *dt_tau_aux_right, *dt_tau_pres_aux_right);
+    VectorTools::interpolate(mapping, dof_handler_density, *dt_tau_aux_right, *dt_tau_rho_aux_right);
 
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_left, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_left, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_left, EquationData::RHO_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_aux_left, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_aux_left, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_aux_left, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(mapping, dof_handler_velocity, dt_tau_vel_left, dt_tau_u_left);
-  VectorTools::interpolate(mapping, dof_handler_pressure, dt_tau_left, dt_tau_pres_left);
-  VectorTools::interpolate(mapping, dof_handler_density, dt_tau_left, dt_tau_rho_left);
-  VectorTools::interpolate(mapping, dof_handler_velocity, dt_tau_vel_aux_left, dt_tau_u_aux_left);
-  VectorTools::interpolate(mapping, dof_handler_pressure, dt_tau_aux_left, dt_tau_pres_aux_left);
-  VectorTools::interpolate(mapping, dof_handler_density, dt_tau_aux_left, dt_tau_rho_aux_left);
+    dt_tau_u_left.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_left, EquationData::U_INDEX_DOF);
+    dt_tau_pres_left.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_left, EquationData::P_INDEX_DOF);
+    dt_tau_rho_left.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_left, EquationData::RHO_INDEX_DOF);
+    dt_tau_u_aux_left.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_aux_left, EquationData::U_INDEX_DOF);
+    dt_tau_pres_aux_left.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_aux_left, EquationData::P_INDEX_DOF);
+    dt_tau_rho_aux_left.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_aux_left, EquationData::RHO_INDEX_DOF);
+    VectorTools::interpolate(mapping, dof_handler_velocity, *dt_tau_vel_left, *dt_tau_u_left);
+    VectorTools::interpolate(mapping, dof_handler_pressure, *dt_tau_left, *dt_tau_pres_left);
+    VectorTools::interpolate(mapping, dof_handler_density, *dt_tau_left, *dt_tau_rho_left);
+    VectorTools::interpolate(mapping, dof_handler_velocity, *dt_tau_vel_aux_left, *dt_tau_u_aux_left);
+    VectorTools::interpolate(mapping, dof_handler_pressure, *dt_tau_aux_left, *dt_tau_pres_aux_left);
+    VectorTools::interpolate(mapping, dof_handler_density, *dt_tau_aux_left, *dt_tau_rho_aux_left);
 
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_right_y, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_right_y, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_right_y, EquationData::RHO_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_aux_right_y, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_aux_right_y, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_aux_right_y, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(dof_handler_velocity, dt_tau_vel_right_y, dt_tau_u_right_y);
-  VectorTools::interpolate(dof_handler_pressure, dt_tau_right_y, dt_tau_pres_right_y);
-  VectorTools::interpolate(dof_handler_density, dt_tau_right_y, dt_tau_rho_right_y);
-  VectorTools::interpolate(dof_handler_velocity, dt_tau_vel_aux_right_y, dt_tau_u_aux_right_y);
-  VectorTools::interpolate(dof_handler_pressure, dt_tau_aux_right_y, dt_tau_pres_aux_right_y);
-  VectorTools::interpolate(dof_handler_density, dt_tau_aux_right_y, dt_tau_rho_aux_right_y);
+    dt_tau_u_right_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_right_y, EquationData::U_INDEX_DOF);
+    dt_tau_pres_right_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_right_y, EquationData::P_INDEX_DOF);
+    dt_tau_rho_right_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_right_y, EquationData::RHO_INDEX_DOF);
+    dt_tau_u_aux_right_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_aux_right_y, EquationData::U_INDEX_DOF);
+    dt_tau_pres_aux_right_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_aux_right_y, EquationData::P_INDEX_DOF);
+    dt_tau_rho_aux_right_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_aux_right_y, EquationData::RHO_INDEX_DOF);
+    VectorTools::interpolate(dof_handler_velocity, *dt_tau_vel_right_y, *dt_tau_u_right_y);
+    VectorTools::interpolate(dof_handler_pressure, *dt_tau_right_y, *dt_tau_pres_right_y);
+    VectorTools::interpolate(dof_handler_density, *dt_tau_right_y, *dt_tau_rho_right_y);
+    VectorTools::interpolate(dof_handler_velocity, *dt_tau_vel_aux_right_y, *dt_tau_u_aux_right_y);
+    VectorTools::interpolate(dof_handler_pressure, *dt_tau_aux_right_y, *dt_tau_pres_aux_right_y);
+    VectorTools::interpolate(dof_handler_density, *dt_tau_aux_right_y, *dt_tau_rho_aux_right_y);
 
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_left_y, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_left_y, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_left_y, EquationData::RHO_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_u_aux_left_y, EquationData::U_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_pres_aux_left_y, EquationData::P_INDEX_DOF);
-  matrix_free_storage->initialize_dof_vector(dt_tau_rho_aux_left_y, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(dof_handler_velocity, dt_tau_vel_left_y, dt_tau_u_left_y);
-  VectorTools::interpolate(dof_handler_pressure, dt_tau_left_y, dt_tau_pres_left_y);
-  VectorTools::interpolate(dof_handler_density, dt_tau_left_y, dt_tau_rho_left_y);
-  VectorTools::interpolate(dof_handler_velocity, dt_tau_vel_aux_left_y, dt_tau_u_aux_left_y);
-  VectorTools::interpolate(dof_handler_pressure, dt_tau_aux_left_y, dt_tau_pres_aux_left_y);
-  VectorTools::interpolate(dof_handler_density, dt_tau_aux_left_y, dt_tau_rho_aux_left_y);
+    dt_tau_u_left_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_left_y, EquationData::U_INDEX_DOF);
+    dt_tau_pres_left_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_left_y, EquationData::P_INDEX_DOF);
+    dt_tau_rho_left_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_left_y, EquationData::RHO_INDEX_DOF);
+    dt_tau_u_aux_left_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_u_aux_left_y, EquationData::U_INDEX_DOF);
+    dt_tau_pres_aux_left_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_pres_aux_left_y, EquationData::P_INDEX_DOF);
+    dt_tau_rho_aux_left_y.emplace();
+    matrix_free_storage->initialize_dof_vector(*dt_tau_rho_aux_left_y, EquationData::RHO_INDEX_DOF);
+    VectorTools::interpolate(dof_handler_velocity, *dt_tau_vel_left_y, *dt_tau_u_left_y);
+    VectorTools::interpolate(dof_handler_pressure, *dt_tau_left_y, *dt_tau_pres_left_y);
+    VectorTools::interpolate(dof_handler_density, *dt_tau_left_y, *dt_tau_rho_left_y);
+    VectorTools::interpolate(dof_handler_velocity, *dt_tau_vel_aux_left_y, *dt_tau_u_aux_left_y);
+    VectorTools::interpolate(dof_handler_pressure, *dt_tau_aux_left_y, *dt_tau_pres_aux_left_y);
+    VectorTools::interpolate(dof_handler_density, *dt_tau_aux_left_y, *dt_tau_rho_aux_left_y);
+  }
 
+  // Initialize background fields
   matrix_free_storage->initialize_dof_vector(u_bar, EquationData::U_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(pres_bar, EquationData::P_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(rho_bar, EquationData::RHO_INDEX_DOF);
@@ -712,25 +776,28 @@ void EulerSolver<dim>::setup_dofs() {
   VectorTools::interpolate(mapping, dof_handler_pressure, *(tc->ic.pressure), pres_bar);
   VectorTools::interpolate(mapping, dof_handler_density, *(tc->ic.density), rho_bar);
 
-  dt_tau_u.scale(u_bar);
-  dt_tau_pres.scale(pres_bar);
-  dt_tau_rho.scale(rho_bar);
+  // Compute damping layer vectors (if meaningful)
+  if(tc->has_mountain_data) {
+    dt_tau_u->scale(u_bar);
+    dt_tau_pres->scale(pres_bar);
+    dt_tau_rho->scale(rho_bar);
 
-  dt_tau_u_right.scale(u_bar);
-  dt_tau_pres_right.scale(pres_bar);
-  dt_tau_rho_right.scale(rho_bar);
+    dt_tau_u_right->scale(u_bar);
+    dt_tau_pres_right->scale(pres_bar);
+    dt_tau_rho_right->scale(rho_bar);
 
-  dt_tau_u_left.scale(u_bar);
-  dt_tau_pres_left.scale(pres_bar);
-  dt_tau_rho_left.scale(rho_bar);
+    dt_tau_u_left->scale(u_bar);
+    dt_tau_pres_left->scale(pres_bar);
+    dt_tau_rho_left->scale(rho_bar);
 
-  dt_tau_u_right_y.scale(u_bar);
-  dt_tau_pres_right_y.scale(pres_bar);
-  dt_tau_rho_right_y.scale(rho_bar);
+    dt_tau_u_right_y->scale(u_bar);
+    dt_tau_pres_right_y->scale(pres_bar);
+    dt_tau_rho_right_y->scale(rho_bar);
 
-  dt_tau_u_left_y.scale(u_bar);
-  dt_tau_pres_left_y.scale(pres_bar);
-  dt_tau_rho_left_y.scale(rho_bar);
+    dt_tau_u_left_y->scale(u_bar);
+    dt_tau_pres_left_y->scale(pres_bar);
+    dt_tau_rho_left_y->scale(rho_bar);
+  }
 
   // Initialize the auxiliary variable to check the error and stop the fixed point loop
   Vector<Number> error_per_cell_tmp(triangulation.n_active_cells());
@@ -1440,7 +1507,8 @@ void EulerSolver<dim>::run(const bool verbose,
       temperature_step();
     }
 
-    // Update before applying damping layer
+    // Update before applying damping layer (if meaningful)
+    // or before ending the time step
     u_s.front().equ(static_cast<Number>(1.0), u_s[IMEX_stage - 1]);
     for(const auto& cell: dof_handler_pressure.active_cell_iterators()) {
       if(cell->is_locally_owned()) {
@@ -1454,45 +1522,49 @@ void EulerSolver<dim>::run(const bool verbose,
       }
     }
 
-    // Apply the damping layer for the vertical component
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho);
-    rho_s.front().scale(dt_tau_rho_aux);
-    u_s.front().add(static_cast<Number>(1.0), dt_tau_u);
-    u_s.front().scale(dt_tau_u_aux);
-    pres_s.front().add(static_cast<Number>(1.0), dt_tau_pres);
-    pres_s.front().scale(dt_tau_pres_aux);
+    // Apply the damping layers (only if the test case actually provides
+    // mountain_data)
+    if(tc->has_mountain_data) {
+      // Apply the damping layer for the vertical component
+      rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho);
+      rho_s.front().scale(*dt_tau_rho_aux);
+      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u);
+      u_s.front().scale(*dt_tau_u_aux);
+      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres);
+      pres_s.front().scale(*dt_tau_pres_aux);
 
-    // Apply the damping layer for the right lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_right);
-    rho_s.front().scale(dt_tau_rho_aux_right);
-    u_s.front().add(static_cast<Number>(1.0), dt_tau_u_right);
-    u_s.front().scale(dt_tau_u_aux_right);
-    pres_s.front().add(static_cast<Number>(1.0), dt_tau_pres_right);
-    pres_s.front().scale(dt_tau_pres_aux_right);
+      // Apply the damping layer for the right lateral part
+      rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_right);
+      rho_s.front().scale(*dt_tau_rho_aux_right);
+      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_right);
+      u_s.front().scale(*dt_tau_u_aux_right);
+      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_right);
+      pres_s.front().scale(*dt_tau_pres_aux_right);
 
-    // Apply the damping layer for the left lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_left);
-    rho_s.front().scale(dt_tau_rho_aux_left);
-    u_s.front().add(static_cast<Number>(1.0), dt_tau_u_left);
-    u_s.front().scale(dt_tau_u_aux_left);
-    pres_s.front().add(static_cast<Number>(1.0), dt_tau_pres_left);
-    pres_s.front().scale(dt_tau_pres_aux_left);
+      // Apply the damping layer for the left lateral part
+      rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_left);
+      rho_s.front().scale(*dt_tau_rho_aux_left);
+      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_left);
+      u_s.front().scale(*dt_tau_u_aux_left);
+      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_left);
+      pres_s.front().scale(*dt_tau_pres_aux_left);
 
-    // Apply the damping layer for the right y lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_right_y);
-    rho_s.front().scale(dt_tau_rho_aux_right_y);
-    u_s.front().add(static_cast<Number>(1.0), dt_tau_u_right_y);
-    u_s.front().scale(dt_tau_u_aux_right_y);
-    pres_s.front().add(static_cast<Number>(1.0), dt_tau_pres_right_y);
-    pres_s.front().scale(dt_tau_pres_aux_right_y);
+      // Apply the damping layer for the right y lateral part
+      rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_right_y);
+      rho_s.front().scale(*dt_tau_rho_aux_right_y);
+      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_right_y);
+      u_s.front().scale(*dt_tau_u_aux_right_y);
+      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_right_y);
+      pres_s.front().scale(*dt_tau_pres_aux_right_y);
 
-    // Apply the damping layer for the left y lateral part
-    rho_s.front().add(static_cast<Number>(1.0), dt_tau_rho_left_y);
-    rho_s.front().scale(dt_tau_rho_aux_left_y);
-    u_s.front().add(static_cast<Number>(1.0), dt_tau_u_left_y);
-    u_s.front().scale(dt_tau_u_aux_left_y);
-    pres_s.front().add(static_cast<Number>(1.0), dt_tau_pres_left_y);
-    pres_s.front().scale(dt_tau_pres_aux_left_y);
+      // Apply the damping layer for the left y lateral part
+      rho_s.front().add(static_cast<Number>(1.0), *dt_tau_rho_left_y);
+      rho_s.front().scale(*dt_tau_rho_aux_left_y);
+      u_s.front().add(static_cast<Number>(1.0), *dt_tau_u_left_y);
+      u_s.front().scale(*dt_tau_u_aux_left_y);
+      pres_s.front().add(static_cast<Number>(1.0), *dt_tau_pres_left_y);
+      pres_s.front().scale(*dt_tau_pres_aux_left_y);
+    }
 
     // Compute auxiliary post-processing data
     const auto max_celerity = inv_Ma*compute_max_celerity();
@@ -1585,6 +1657,7 @@ void print_help(const char* program_name) {
             << "Options:\n"
             << "  -p, --param FILE     Parameter file to read\n"
             << "  -h, --help           Show this help message\n\n"
+            << "  --help_test_case     Show the help message of the test case in the parameter file\n\n"
             << "Default parameter file: parameter-file.prm\n";
 }
 
@@ -1598,7 +1671,7 @@ int main(int argc, char *argv[]) {
 
       if(arg == "-h" || arg == "--help") {
         print_help(argv[0]);
-        data.print_parameters()
+        data.print_parameters();
         return 0;
       }
       else if(arg == "-p" || arg == "--param") {
