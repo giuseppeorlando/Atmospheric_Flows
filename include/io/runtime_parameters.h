@@ -220,7 +220,8 @@ namespace RunTimeParameters {
                         "none",
                         Patterns::Selection("none|R1|R2"),
                         "Formulation of the rotation term: 'none' (no rotation), 'R1' or 'R2' "
-                        "(see https://arxiv.org/abs/2605.29598 and include/physics/rotation.h).");
+                        "(see https://arxiv.org/abs/2605.29598 and include/physics/rotation.h). "
+                        "WARNING: R2 is consistent only for a background state at rest.");
 
       prm.declare_entry("L_ref",
                         "1.0",

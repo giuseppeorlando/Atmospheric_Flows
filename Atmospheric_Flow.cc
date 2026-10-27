@@ -1593,17 +1593,23 @@ void EulerSolver<dim>::run(const bool verbose,
 // The main function is quite standard. We just need to declare the EulerSolver
 // instance and let the simulation run. Include also a help message
 //
-void print_help(const char* program_name) {
+void print_help(const char* program_name, const unsigned dim) {
   std::cout << "Usage: " << program_name << " [options]\n\n"
             << "Options:\n"
             << "  -p, --param FILE     Parameter file to read\n"
             << "  -h, --help           Show this help message\n\n"
             << "  --help_test_case     Show the help message of the test case in the parameter file\n\n"
-            << "Default parameter file: parameter-file.prm\n";
+            << "Default parameter file: parameter-file.prm\n\n"
+            << "Note: the dimension of the problem is fixed at compile time (dim in main(), currently " << dim << ").\n"
+            << "      Two-dimensional test cases (inertia-gravity waves, vertical slice x-z) require dim = 2.\n";
 }
 
 int main(int argc, char *argv[]) {
   try {
+    // Dimension of the problem (fixed at compile time). Two-dimensional configurations
+    // are interpreted as vertical slices in the x-z plane (see include/physics/vertical_slice.h)
+    constexpr unsigned dim = 3;
+
     // Read the parameters
     RunTimeParameters::Data_Storage data;
     std::string parameter_file = "parameter-file.prm";
@@ -1611,7 +1617,7 @@ int main(int argc, char *argv[]) {
       std::string arg = argv[i];
 
       if(arg == "-h" || arg == "--help") {
-        print_help(argv[0]);
+        print_help(argv[0], dim);
         data.print_parameters();
         return 0;
       }
@@ -1627,7 +1633,7 @@ int main(int argc, char *argv[]) {
       }
       else {
         std::cerr << "Unknown option: " << arg << "\n";
-        print_help(argv[0]);
+        print_help(argv[0], dim);
         return 1;
       }
     }
@@ -1649,10 +1655,6 @@ int main(int argc, char *argv[]) {
 
     const auto& curr_rank = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
     deallog.depth_console(data.verbose && curr_rank == 0 ? 2 : 0);
-
-    // Dimension of the problem (fixed at compile time). Two-dimensional configurations
-    // are interpreted as vertical slices in the x-z plane (see include/physics/vertical_slice.h)
-    constexpr unsigned dim = 3;
 
     // Initilize Butcher tableaux. The declaration of the coefficients (hard-coded for the moment)
     // is totally relegated here, so this is the only place where we need to modify (much cleaner)
