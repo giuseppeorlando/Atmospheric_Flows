@@ -39,7 +39,8 @@ namespace GalChenMapping {
   /**
    * Now we can focus on mappings from reference element to the physical one
      using the Gal-Chen transformation. Notice that this is specific for the
-     3D versiera of Agnesi (it requires a user-defined mountain profile in general)
+     versiera of Agnesi (3D or 2D for a vertical slice; it requires a user-defined
+     mountain profile in general)
    */
   template<unsigned dim, typename T = double>
   class PushForward: public Function<dim, T> {
@@ -49,7 +50,7 @@ namespace GalChenMapping {
      * @param z_max_ height of the domain
      * @param h_ height of the mountain
      * @param xc_ x-center of the mountain
-     * @param yc_ y-center of the mountain
+     * @param yc_ y-center of the mountain (only for dim = 3)
      * @param ac_ semi-width of the mountain
      * @param L_ref_ Reference length
      */
@@ -96,29 +97,27 @@ namespace GalChenMapping {
   template<unsigned dim, typename T>
   T PushForward<dim, T>::value(const Point<dim, T>& p,
                                const unsigned       component) const {
-    // x component
-    if(component == 0) {
-      return p[0];
+    // Horizontal components (x and, in three dimensions, y)
+    if(component < dim - 1) {
+      return p[component];
     }
-    // y component
-    else if(component == 1) {
-      return p[1];
+    // Vertical component (z). In two dimensions, the domain is a vertical slice in the x-z plane
+    // and we employ the classical versiera of Agnesi (see include/physics/vertical_slice.h)
+    auto den = static_cast<T>(1.0) +
+               ((p[0]*L_ref - xc)/ac)*((p[0]*L_ref - xc)/ac);
+    if constexpr(dim == 3) {
+      den += ((p[1]*L_ref - yc)/ac)*((p[1]*L_ref - yc)/ac);
     }
-    // z component
-    else if(component == 2) {
-      auto hX = h/std::pow(static_cast<T>(1.0) +
-                           ((p[0]*L_ref - xc)/ac)*((p[0]*L_ref - xc)/ac) +
-                           ((p[1]*L_ref - yc)/ac)*((p[1]*L_ref - yc)/ac), static_cast<T>(1.5));
-      hX /= L_ref;
+    auto hX = h/std::pow(den, static_cast<T>(0.5*dim));
+    hX /= L_ref;
 
-      return p[2] + ((z_max - p[2])/z_max)*hX;
-    }
+    return p[dim - 1] + ((z_max - p[dim - 1])/z_max)*hX;
   }
 
   /**
    * We compute now the inverse mapping (from physical to reference).
-     Notice again that this is specific for the 3D versiera of Agnesi
-     (it requires a user-defined mountain profile in general)
+     Notice again that this is specific for the versiera of Agnesi
+     (3D or 2D for a vertical slice; it requires a user-defined mountain profile in general)
    */
   template<unsigned dim, typename T = double>
   class PullBack: public Function<dim, T> {
@@ -128,7 +127,7 @@ namespace GalChenMapping {
      * @param z_max_ height of the domain
      * @param h_ height of the mountain
      * @param xc_ x-center of the mountain
-     * @param yc_ y-center of the mountain
+     * @param yc_ y-center of the mountain (only for dim = 3)
      * @param ac_ semi-width of the mountain
      * @param L_ref_ Reference length
      */
@@ -175,23 +174,21 @@ namespace GalChenMapping {
   template<unsigned dim, typename T>
   T PullBack<dim, T>::value(const Point<dim, T>& p,
                             const unsigned       component) const {
-    // x component
-    if(component == 0) {
-      return p[0];
+    // Horizontal components (x and, in three dimensions, y)
+    if(component < dim - 1) {
+      return p[component];
     }
-    // y component
-    else if(component == 1) {
-      return p[1];
+    // Vertical component (z). In two dimensions, the domain is a vertical slice in the x-z plane
+    // and we employ the classical versiera of Agnesi (see include/physics/vertical_slice.h)
+    auto den = static_cast<T>(1.0) +
+               ((p[0]*L_ref - xc)/ac)*((p[0]*L_ref - xc)/ac);
+    if constexpr(dim == 3) {
+      den += ((p[1]*L_ref - yc)/ac)*((p[1]*L_ref - yc)/ac);
     }
-    // z component
-    else if(component == 2) {
-      auto hx = h/std::pow(static_cast<T>(1.0) +
-                           ((p[0]*L_ref - xc)/ac)*((p[0]*L_ref - xc)/ac) +
-                           ((p[1]*L_ref - yc)/ac)*((p[1]*L_ref - yc)/ac), static_cast<T>(1.5));
-      hx /= L_ref;
+    auto hx = h/std::pow(den, static_cast<T>(0.5*dim));
+    hx /= L_ref;
 
-      return z_max*(p[2] - hx)/(z_max - hx);
-    }
+    return z_max*(p[dim - 1] - hx)/(z_max - hx);
   }
 
 } // namespace Mapping

@@ -32,6 +32,11 @@ constexpr int my_ceil(const T num) {
 namespace EquationData {
   static const unsigned n_vars = 3; /*!< Number of variables for which we solve a linear system */
 
+  static const unsigned n_comp_u = 3; /*!< Number of velocity components. This is equal to 3 also for
+                                           two-dimensional configurations, which are interpreted as vertical
+                                           slices with an out-of-plane velocity component
+                                           (see include/physics/vertical_slice.h) */
+
   // Define auxiliary indices related to the dof handlers order and to linear systems under consideration
   static const unsigned RHO_INDEX_SYSTEM = 1;
   static const unsigned P_INDEX_SYSTEM   = 2;

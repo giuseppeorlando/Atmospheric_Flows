@@ -77,14 +77,14 @@ namespace IC_NonHydrostatic3D {
   template<unsigned dim, typename T>
   Velocity<dim, T>::Velocity(RunTimeParameters::MountainParameters& parameters_,
                              RunTimeParameters::Data_Storage& data_):
-    Function<dim, T>(dim, data_.initial_time), parameters(parameters_), data(data_) {}
+    Function<dim, T>(EquationData::n_comp_u, data_.initial_time), parameters(parameters_), data(data_) {}
 
   // Specify the value for each spatial component. This function is overriden.
   //
   template<unsigned dim, typename T>
   T Velocity<dim, T>::value(const Point<dim, T>& p,
                             const unsigned       component) const {
-    AssertIndexRange(component, dim);
+    AssertIndexRange(component, EquationData::n_comp_u);
 
     if(component == 0) {
       return parameters.u_bar/data.u_ref;
@@ -99,9 +99,9 @@ namespace IC_NonHydrostatic3D {
   template<unsigned dim, typename T>
   void Velocity<dim, T>::vector_value(const Point<dim, T>& p,
                                       Vector<T>&           values) const {
-    Assert(values.size() == dim, ExcDimensionMismatch(values.size(), dim));
+    Assert(values.size() == EquationData::n_comp_u, ExcDimensionMismatch(values.size(), EquationData::n_comp_u));
 
-    for(unsigned i = 0; i < dim; ++i) {
+    for(unsigned i = 0; i < EquationData::n_comp_u; ++i) {
       values[i] = value(p, i);
     }
   }
