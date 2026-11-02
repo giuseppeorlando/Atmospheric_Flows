@@ -531,9 +531,12 @@ void EulerSolver<dim>::create_triangulation(const RunTimeParameters::Data_Storag
   TimerOutput::Scope t(time_table, "Create triangulation");
 
   Point<dim, Number> lower_left;
-  lower_left[0] = static_cast<Number>(data.x_min);
-  lower_left[1] = static_cast<Number>(data.y_min);
-  lower_left[2] = static_cast<Number>(data.z_min);
+  lower_left[0] = static_cast<Number>(data.x_min)/
+                  static_cast<Number>(data.L_ref);
+  lower_left[1] = static_cast<Number>(data.y_min)/
+                  static_cast<Number>(data.L_ref);
+  lower_left[2] = static_cast<Number>(data.z_min)/
+                  static_cast<Number>(data.L_ref);
   Point<dim, Number> upper_right;
   upper_right[0] = static_cast<Number>(data.x_max)/
                    static_cast<Number>(data.L_ref);
