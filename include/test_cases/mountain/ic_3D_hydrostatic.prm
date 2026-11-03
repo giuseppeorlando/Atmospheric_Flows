@@ -1,0 +1,28 @@
+subsection Physical data
+  # In this subsection we declare the physical data for the specific configuration
+  set h  = 100.0    # Mountain height
+  set xc = 120000.0 # x-center of the mountain
+  set yc = 120000.0 # y-center of the mountain
+  set ac = 10000.0  # semi-width of the mountain
+
+  # The buoyancy frequency is not employed (isothermal atmosphere):
+  # for T_bar = 250 K, N = g/sqrt(cp*T_bar) is approximately 0.0198
+  set u_bar = 10.0     # Background horizontal velocity
+  set p_bar = 100000.0 # Background pressure (z = 0)
+  set T_bar = 250.0    # Background temperature (constant)
+end
+
+subsection Rayleigh damping data
+  # In this subsection we declare some numerical data
+  # related to Rayliegh damping layers
+  set z_start        = 10000.0
+  set lambda_z       = 1.2
+  set x_start_left   = 16000.0
+  set lambda_x_left  = 1.2
+  set x_start_right  = 180000.0
+  set lambda_x_right = 1.2
+  set y_start_left   = 60000.0
+  set lambda_y_left  = 1.2
+  set y_start_right  = 180000.0
+  set lambda_y_right = 1.2
+end

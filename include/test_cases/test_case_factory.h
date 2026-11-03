@@ -17,7 +17,9 @@
 // Start by including the necessary header files
 //
 #include "mountain/ic_3D_nonhydrostatic.h"
+#include "mountain/ic_3D_hydrostatic.h"
 #include "mountain/Rayleigh_damping.h"
+#include "IGW/ic_IGW.h"
 
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -36,6 +38,12 @@ make_test_case(const std::string& tc_name,
   if(tc_name == "3D non-hydrostatic mountain") {
     return std::make_unique<NonHydrostatic3DTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
   }
+  else if(tc_name == "3D hydrostatic mountain") {
+    return std::make_unique<Hydrostatic3DTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
+  }
+  else if(tc_name == "inertia-gravity waves") {
+    return std::make_unique<IGWTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
+  }
 
   AssertThrow(false,
               dealii::ExcMessage("Unknown test case: " + tc_name));
@@ -48,8 +56,11 @@ make_test_case(const std::string& tc_name,
  * without changing the solver-side interface.
  */
 void print_help_test_case(const std::string& tc_name) {
-  if(tc_name == "3D non-hydrostatic mountain") {
+  if(tc_name == "3D non-hydrostatic mountain" || tc_name == "3D hydrostatic mountain") {
     return print_help_tc<RunTimeParameters::MountainParameters>();
+  }
+  else if(tc_name == "inertia-gravity waves") {
+    return print_help_tc<RunTimeParameters::IGWParameters>();
   }
 
   AssertThrow(false,
