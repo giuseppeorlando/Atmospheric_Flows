@@ -63,7 +63,6 @@ namespace fs = std::filesystem;
 // Include headers related to the problem of interest
 #include "include/test_cases/test_case_factory.h"
 
-#include "include/ic_bc/Rayleigh_damping.h"
 #include "include/mapping/mapping.h"
 
 #include "euler_operator.h"

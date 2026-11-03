@@ -83,6 +83,13 @@ namespace Atmospheric_Flow {
     Number get_Froude() const;
 
     /**
+     * Setter of the number of stages. This is useful for multigrid purposes
+     * @param n_stages_ number of stages
+     */
+    inline DEAL_II_ALWAYS_INLINE
+    void set_n_stages(const unsigned n_stages_);
+
+    /**
      * Setter of the current IMEX stage
      * @param current IMEX stage
      */
@@ -643,12 +650,12 @@ namespace Atmospheric_Flow {
   // Setter of number of stages
   //
   template<unsigned dim,
-           unsigned fe_degree_rho, unsigned fe_degree_p, unsigned fe_degree_u,
+           unsigned fe_degree_u, unsigned fe_degree_rho, unsigned fe_degree_p,
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   inline DEAL_II_ALWAYS_INLINE
   void EULEROperator<dim,
-                     fe_degree_rho, fe_degree_p, fe_degree_u,
+                     fe_degree_u, fe_degree_rho, fe_degree_p,
                      n_q_points_1d, n_q_points_1d_boundary,
                      Vec>::
   set_n_stages(const unsigned n_stages_) {
