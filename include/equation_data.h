@@ -61,6 +61,7 @@ namespace EquationData {
   // Physical parameters
   static const double Cp_Cv = 1.4;   /*!< Specific heats ratio */
   static const double R     = 287.0; /*!< Specific gas constant */
+  static const double p0    = 1e5;   /*!< Reference pressure for the Exner function (in Pa) */
 
   static const double g = 9.81; /*!< Acceleration of gravity */
 } // namespace EquationData
