@@ -53,6 +53,12 @@ namespace TimeStepping {
     /**
      * Get the coefficients in the Butcher tableau representation
      * @return a coefficient of the method
+     */
+    void get_coefficients(std::vector<std::vector<T>>& a_) const;
+
+    /**
+     * Get the coefficients in the Butcher tableau representation
+     * @return a coefficient of the method
      * @return b weights of the method
      */
     void get_coefficients(std::vector<std::vector<T>>& a_,
@@ -101,6 +107,13 @@ namespace TimeStepping {
   template<typename T>
   inline unsigned RungeKutta<T>::get_n_stages() const {
     return n_stages;
+  }
+
+  // Get the coefficients of the Runge-Kutta scheme
+  //
+  template<typename T>
+  void RungeKutta<T>::get_coefficients(std::vector<std::vector<T>>& a_) const {
+    a_ = this->a;
   }
 
   // Get the coefficients of the Runge-Kutta scheme

@@ -398,7 +398,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   TurbulentOperator<dim,
-                    fe_degree_T, fe_degree_u,
+                    fe_degree_u, fe_degree_T,
                     n_q_points_1d, n_q_points_1d_boundary, Vec>::
   TurbulentOperator():
     MatrixFreeOperators::Base<dim, Vec>(),
@@ -419,7 +419,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   TurbulentOperator<dim,
-                    fe_degree_T, fe_degree_u,
+                    fe_degree_u, fe_degree_T,
                     n_q_points_1d, n_q_points_1d_boundary,
                     Vec>::
   TurbulentOperator(const RunTimeParameters::Data_Storage& data,
@@ -454,7 +454,7 @@ namespace Turbulent_Diffusivity {
   template<typename T>
   inline DEAL_II_ALWAYS_INLINE
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   set_dt(const T time_step) {
@@ -470,7 +470,7 @@ namespace Turbulent_Diffusivity {
            typename Vec>
   inline DEAL_II_ALWAYS_INLINE
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   set_IMEX_stage(const unsigned stage) {
@@ -489,7 +489,7 @@ namespace Turbulent_Diffusivity {
            typename Vec>
   inline DEAL_II_ALWAYS_INLINE
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   set_NS_stage(const unsigned stage) {
@@ -505,7 +505,7 @@ namespace Turbulent_Diffusivity {
            unsigned fe_degree_u, unsigned fe_degree_T,
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary, typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   set_u_curr(const Vec& src) {
@@ -520,7 +520,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   set_theta_curr(const Vec& src) {
@@ -540,7 +540,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_rhs_cell_term_velocity(const MatrixFree<dim, Number>&       data,
@@ -616,7 +616,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_rhs_face_term_velocity(const MatrixFree<dim, Number>&       data,
@@ -732,7 +732,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   vmult_rhs_velocity(Vec& dst, const std::vector<Vec>& src) const {
@@ -755,7 +755,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_cell_term_velocity(const MatrixFree<dim, Number>&       data,
@@ -822,7 +822,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_face_term_velocity(const MatrixFree<dim, Number>&       data,
@@ -941,7 +941,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_rhs_cell_term_temperature(const MatrixFree<dim, Number>&       data,
@@ -1016,7 +1016,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_rhs_face_term_temperature(const MatrixFree<dim, Number>&       data,
@@ -1135,7 +1135,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   vmult_rhs_temperature(Vec& dst, const std::vector<Vec>& src) const {
@@ -1158,7 +1158,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_cell_term_temperature(const MatrixFree<dim, Number>&       data,
@@ -1221,7 +1221,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_face_term_temperature(const MatrixFree<dim, Number>&               data,
@@ -1340,7 +1340,7 @@ namespace Turbulent_Diffusivity {
            unsigned fe_degree_u, unsigned fe_degree_T,
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary, typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary, Vec>::
   apply_add(Vec& dst, const Vec& src) const {
     AssertIndexRange(NS_stage, 3);
@@ -1379,7 +1379,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_diagonal_cell_term_velocity(const MatrixFree<dim, Number>&       data,
@@ -1439,7 +1439,7 @@ namespace Turbulent_Diffusivity {
           const auto& grad_u    = phi.get_gradient(q);
           diff_flux[0][dim - 1] = kappa_curr*grad_u[0][dim - 1];
 
-          phi.submit_value(phi.get_value(q);, q);
+          phi.submit_value(phi.get_value(q), q);
           phi.submit_gradient(a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*diff_flux, q);
         }
 
@@ -1461,7 +1461,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_diagonal_face_term_velocity(const MatrixFree<dim, Number>&       data,
@@ -1597,7 +1597,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   assemble_diagonal_cell_term_temperature(const MatrixFree<dim, Number>&       data,
@@ -1679,7 +1679,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary, Vec>::
   assemble_diagonal_face_term_temperature(const MatrixFree<dim, Number>&       data,
                                           Vec&                                 dst,
@@ -1815,7 +1815,7 @@ namespace Turbulent_Diffusivity {
            unsigned n_q_points_1d, unsigned n_q_points_1d_boundary,
            typename Vec>
   void TurbulentOperator<dim,
-                         fe_degree_T, fe_degree_u,
+                         fe_degree_u, fe_degree_T,
                          n_q_points_1d, n_q_points_1d_boundary,
                          Vec>::
   compute_diagonal() {
