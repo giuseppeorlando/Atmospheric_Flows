@@ -7,14 +7,19 @@ The solver is based on a high-order Discontinuous Galerkin (DG) spatial discreti
 > simulations with adaptive mesh refinement". In: Journal of Computational and Applied Mathematics
 > (2023), p. 115124.
 
-The present version extends the solver over orography to include rotational (Coriolis) effects. The rotation terms have been developed by Letizia Bottani, starting from the solver developed by Giuseppe Orlando (branch `Mesoscale` of this repository). The rotational formulations are discussed in https://arxiv.org/abs/2605.29598.
+The present version extends the solver over orography to include rotational (Coriolis) effects, as described in
+
+> L. Bottani, T. Benacchio, G. Orlando, L. Bonaventura, and A. P. Engsig-Karup. "An IMEX-DG solver with
+> non-conforming mesh refinement for atmospheric dynamics with rotation". arXiv preprint
+> [arXiv:2605.29598](https://arxiv.org/abs/2605.29598) (2026).
+
+The rotation terms have been developed by Letizia Bottani, starting from the solver developed by Giuseppe Orlando (branch `Mesoscale` of this repository).
 
 ---
 
 ## About this version
 
-The code on the `master` branch corresponds to the branch `rotation` of this
-repository. The same code is also available in the separate repository
+The code is also available in the separate repository
 [Atmospheric_Flows_Rotation](https://github.com/letiziabottani/Atmospheric_Flows_Rotation), which contains only the files related to the solver with rotation (it does not include the additional modules described below).
 
 ---
@@ -114,7 +119,8 @@ Two different operators including the rotation term are provided
 - `euler_operator_rotation.h`
 - `euler_operator_rotation_R2.h`
 
-The differences between the two formulations are discussed in https://arxiv.org/abs/2605.29598.
+The differences between the two formulations are discussed in the paper on rotation cited above.
+The intensity of the rotation is determined by the parameter `Rossby` (Rossby number).
 
 The operator is selected in the main source file:
 
@@ -177,9 +183,9 @@ direction:
 #### Solver Tolerances
 
 - Fixed-point iteration convergence:
-  - `||dp|| < atol_iterative + rtol_iterative * ||p||`
+  - `||dp|| < atol_fixed_point + rtol_fixed_point * ||p||`
 - Linear solver convergence:
-  - `||Ax - b|| < atol_fixed_point + rtol_fixed_point * ||b||`
+  - `||Ax - b|| < atol_iterative + rtol_iterative * ||b||`
 
 ### Non-Dimensional Formulation
 
