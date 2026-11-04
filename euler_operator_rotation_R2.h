@@ -968,6 +968,8 @@ namespace Atmospheric_Flow {
           rotation_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Ro*rho_s*k_cross_u);*/
           //rotation_term[0] += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(-inv_Ro*rho_s*u_rel[1]);
           //rotation_term[1] += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Ro*rho_s*u_rel[0]);
+          rotation_term[0] += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(inv_Ro*rho_s*u_bar[1]);
+          rotation_term[1] += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*(-inv_Ro*rho_s*u_bar[0]);
           phi.submit_value(rho_old*u_old - gravity_term - rotation_term, q);
           phi.submit_gradient(flux, q);
         }
