@@ -1,6 +1,6 @@
 subsection Test case
   # In this subsection we specify the test case
-  set test_case = 3D non-hydrostatic mountain
+  set test_case = 3D mountain
   set test_case_parameters = include/test_cases/mountain/ic_3D_nonhydrostatic.prm
 end
 

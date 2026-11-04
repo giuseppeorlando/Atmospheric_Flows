@@ -23,6 +23,7 @@
 #include <deal.II/base/numbers.h>
 
 #include "IGW_parameters.h"
+#include "../background_state.h"
 #include "../test_case.h"
 
 #include "../../equation_data.h"
@@ -36,36 +37,13 @@
 // horizontal background velocity). Two background states are available:
 // - 'isothermal': isothermal atmosphere with a perturbation of the temperature;
 // - 'constant N': atmosphere with constant buoyancy frequency (neutral for N = 0) with a perturbation
-//   of the potential temperature.
+//   of the potential temperature (see include/test_cases/background_state.h).
 // For a zero amplitude of the perturbation, the background state at rest is obtained
 // (e.g. to test the preservation of hydrostatic equilibrium). The last coordinate
 // is the vertical one (see include/physics/vertical_slice.h)
 //
 namespace IC_IGW {
   using namespace dealii;
-
-  /**
-   * Exner pressure (normalized with its value at z = 0) of the background state with constant buoyancy frequency
-   * @param z height
-   * @param parameters parameters specific of the test case
-   * @return the Exner pressure
-   */
-  template<typename T>
-  T exner_constant_N(const T z, const RunTimeParameters::IGWParameters& parameters) {
-    const auto Gamma = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
-                       static_cast<T>(EquationData::Cp_Cv);
-    const auto Cp    = static_cast<T>(EquationData::R)/Gamma;
-    const auto g     = static_cast<T>(EquationData::g);
-
-    // Neutral atmosphere (limit for N -> 0)
-    if(parameters.N == 0.0) {
-      return static_cast<T>(1.0) - g/(Cp*parameters.T_bar)*z;
-    }
-
-    const auto N2 = parameters.N*parameters.N;
-
-    return static_cast<T>(1.0) - g*g/(N2*Cp*parameters.T_bar)*(static_cast<T>(1.0) - std::exp(-N2/g*z));
-  }
 
   /**
    * We declare now the class that describes the initial condition for the velocity.
@@ -185,7 +163,8 @@ namespace IC_IGW {
       const auto Gamma = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
                          static_cast<T>(EquationData::Cp_Cv);
 
-      return (parameters.p_bar/data.p_ref)*std::pow(exner_constant_N(p[dim - 1]*data.L_ref, parameters),
+      return (parameters.p_bar/data.p_ref)*std::pow(BackgroundState::exner_constant_N<T>(p[dim - 1], data.L_ref,
+                                                                                         parameters.N, parameters.T_bar),
                                                     static_cast<T>(1.0)/Gamma);
     }
 
@@ -247,11 +226,13 @@ namespace IC_IGW {
 
     // Background state with constant buoyancy frequency and perturbation of the potential temperature
     if(parameters.background == "constant N") {
-      const auto theta_bar   = parameters.T_bar*std::exp(parameters.N*parameters.N/static_cast<T>(EquationData::g)*z);
+      const auto pi_bar      = BackgroundState::exner_constant_N<T>(p[dim - 1], data.L_ref, parameters.N, parameters.T_bar);
+      const auto theta_bar   = BackgroundState::potential_temperature_constant_N<T>(p[dim - 1], data.L_ref,
+                                                                                    parameters.N, parameters.T_bar);
       const auto theta_prime = parameters.dT*std::sin(numbers::PI*z/parameters.H)/(static_cast<T>(1.0) + r*r);
 
       return (rho_bar/data.rho_ref)*
-             parameters.T_bar/(theta_bar + theta_prime)*std::pow(exner_constant_N(z, parameters), static_cast<T>(1.0)/
+             parameters.T_bar/(theta_bar + theta_prime)*std::pow(pi_bar, static_cast<T>(1.0)/
                                                                  (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
     }
 

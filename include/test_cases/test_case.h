@@ -116,11 +116,11 @@ namespace internal {
  * and then declare a type alias, e.g.
  *
  *   template<unsigned dim, typename T = double>
- *   using NonHydrostatic3DTestCase = TestCase<dim, T,
-                                               RunTimeParameters::MountainParameters,
-                                               ICBC::Density<dim, T>,
-                                               ICBC::Velocity<dim, T>,
-                                               ICBC::Pressure<dim, T>>;
+ *   using Mountain3DTestCase = TestCase<dim, T,
+                                         RunTimeParameters::MountainParameters,
+                                         ICBC::Density<dim, T>,
+                                         ICBC::Velocity<dim, T>,
+                                         ICBC::Pressure<dim, T>>;
  *
  * A test case with genuinely different setup logic (e.g. needing extra
  * initialization not covered here) can still bypass this template and

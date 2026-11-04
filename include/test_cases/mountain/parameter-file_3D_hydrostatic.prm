@@ -1,13 +1,12 @@
-# Three-dimensional test case. Run from the root of the repository, e.g.
-#   mpirun -np <n> ./Atmospheric_Flow -p include/test_cases/mountain/parameter-file_3D_hydrostatic.prm
+# Three-dimensional mountain test case.
 
-# NOTE: the isothermal atmosphere of the hydrostatic mountain is employed (N = g/sqrt(cp*T_bar),
-# approximately 0.0198). Set 'test_case = 3D non-hydrostatic mountain' (and N = 0.02 in the file
-# of the test case) to employ a constant buoyancy frequency.
+# NOTE: an isothermal atmosphere is employed (N = g/sqrt(cp*T_bar)).
+# Set 'background = constant N' (and the value of N) in the file of the test case to employ
+# a constant buoyancy frequency.
 
 subsection Test case
   # In this subsection we specify the test case
-  set test_case = 3D hydrostatic mountain
+  set test_case = 3D mountain
   set test_case_parameters = include/test_cases/mountain/ic_3D_hydrostatic.prm
 end
 
@@ -23,11 +22,11 @@ subsection Physical data
   set y_max = 240000.0
   set z_max = 30000.0
 
-  set Mach   = 1
+  set Mach   = 1.0
   set Froude = 0.319275428407050
 
-  set Rossby               = 10000
-  set rotation_formulation = R1
+  set Rossby               = 10000.0
+  set rotation_formulation = R1 # none, R1, R2
 
   set L_ref   = 1.0 # Reference length to build non-dimensional domain
   set u_ref   = 1.0 # Reference velocity for non-dimensional variables
@@ -38,7 +37,7 @@ end
 subsection Numerical data
   # In this subsection we declare some numerical data
   # (time step and fixed point iteration tolerance)
-  set dt = 4
+  set dt = 4.0
 
   # Fixed point tolerances
   set atol_fixed_point = 0.0

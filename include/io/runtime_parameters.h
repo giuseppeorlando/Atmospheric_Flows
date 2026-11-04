@@ -156,8 +156,8 @@ namespace RunTimeParameters {
     prm.enter_subsection("Test case");
     {
       prm.declare_entry("test_case",
-                        "3D non-hydrostatic mountain",
-                        Patterns::Selection("3D non-hydrostatic mountain|3D hydrostatic mountain|inertia-gravity waves"),
+                        "3D mountain",
+                        Patterns::Selection("3D mountain|inertia-gravity waves"),
                         "Name of the configuration of interest.");
       prm.declare_entry("test_case_parameters",
                         "ic_3D_nonhydrostatic.prm",

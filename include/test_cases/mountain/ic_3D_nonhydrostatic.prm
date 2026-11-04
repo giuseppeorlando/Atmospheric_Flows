@@ -5,7 +5,8 @@ subsection Physical data
   set yc = 20000.0 # y-center of the mountain
   set ac = 1000.0  # semi-width of the mountain
 
-  set N = 0.01 # Buoyancy frequency
+  set background = constant N # Type of background state ('constant N' or 'isothermal')
+  set N          = 0.01       # Buoyancy frequency
 
   set u_bar = 10.0     # Background horizontal velocity 
   set p_bar = 100000.0 # Background pressure (z = 0)

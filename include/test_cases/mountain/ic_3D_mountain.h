@@ -10,7 +10,7 @@
  *
  * ------------------------------------------------------------------------
  *
- * Author: Giuseppe Orlando, 2026
+ * Authors: Letizia Bottani, Giuseppe Orlando, 2026
  */
 #pragma once
 
@@ -22,6 +22,7 @@
 #include <deal.II/base/function.h>
 
 #include "mountain_parameters.h"
+#include "../background_state.h"
 #include "../test_case.h"
 
 #include "../../equation_data.h"
@@ -30,11 +31,16 @@
 
 // @sect{Initial conditions}
 
-// In this namespace, we declare the initial background conditions.
-// Some parameters could be read at run-time, but this would be very
-// configuration dependent and the parameter file would become unreadable
+// In this namespace, we declare the initial background conditions for a flow over a mountain
+// with a uniform horizontal background velocity. Two background states are available
+// (see include/test_cases/background_state.h):
+// - 'constant N': atmosphere with constant buoyancy frequency (neutral for N = 0);
+// - 'isothermal': isothermal atmosphere.
+// Notice that the hydrostatic or non-hydrostatic regime is determined by the semi-width
+// of the mountain with respect to u_bar/N, rather than by the background state.
+// The last coordinate is the vertical one
 //
-namespace IC_NonHydrostatic3D {
+namespace IC_Mountain3D {
   using namespace dealii;
 
   /**
@@ -153,10 +159,9 @@ namespace IC_NonHydrostatic3D {
     const auto Gamma  = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
                         static_cast<T>(EquationData::Cp_Cv);
 
-    const auto pi_bar = static_cast<T>(1.0)
-                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(parameters.N*parameters.N)*
-                        Gamma/(static_cast<T>(EquationData::R)*parameters.T_bar)*
-                        (static_cast<T>(1.0) - std::exp(-parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref));
+    const auto pi_bar = (parameters.background == "isothermal") ?
+                        BackgroundState::exner_isothermal<T>(p[dim - 1], data.L_ref, parameters.T_bar) :
+                        BackgroundState::exner_constant_N<T>(p[dim - 1], data.L_ref, parameters.N, parameters.T_bar);
 
     return (parameters.p_bar/data.p_ref)*std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
   }
@@ -204,34 +209,40 @@ namespace IC_NonHydrostatic3D {
     (void)component;
     AssertIndexRange(component, 1);
 
-    const auto Gamma  = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
-                        static_cast<T>(EquationData::Cp_Cv);
-
-    const auto pi_bar = static_cast<T>(1.0)
-                      - static_cast<T>(EquationData::g)*static_cast<T>(EquationData::g)/(parameters.N*parameters.N)*
-                        Gamma/(static_cast<T>(EquationData::R)*parameters.T_bar)*
-                        (static_cast<T>(1.0) - std::exp(-parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref));
-
-    const auto theta_bar = parameters.T_bar*std::exp(parameters.N*parameters.N/static_cast<T>(EquationData::g)*p[2]*data.L_ref);
-
+    // Background density (at z = 0)
     const auto rho_bar = parameters.p_bar/(static_cast<T>(EquationData::R)*parameters.T_bar);
+
+    // Isothermal atmosphere
+    if(parameters.background == "isothermal") {
+      const auto Gamma  = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
+                          static_cast<T>(EquationData::Cp_Cv);
+
+      const auto pi_bar = BackgroundState::exner_isothermal<T>(p[dim - 1], data.L_ref, parameters.T_bar);
+
+      return (rho_bar/data.rho_ref)*std::pow(pi_bar, static_cast<T>(1.0)/Gamma);
+    }
+
+    // Atmosphere with constant buoyancy frequency
+    const auto pi_bar    = BackgroundState::exner_constant_N<T>(p[dim - 1], data.L_ref, parameters.N, parameters.T_bar);
+    const auto theta_bar = BackgroundState::potential_temperature_constant_N<T>(p[dim - 1], data.L_ref,
+                                                                                parameters.N, parameters.T_bar);
 
     return (rho_bar/data.rho_ref)*
            parameters.T_bar/theta_bar*std::pow(pi_bar, static_cast<T>(1.0)/
                                                (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
   }
 
-} // namespace IC_NonHydrostatic3D
+} // namespace IC_Mountain3D
 
 /**
- * @brief 3D non-hydrostatic test case
+ * @brief 3D mountain test case
  *
- * This type owns all 3D non-hydrostatic-specific configuration and hides the concrete
+ * This type owns all mountain-specific configuration and hides the concrete
  * implementations from the solver.
  */
 template<unsigned dim, typename T = double>
-using NonHydrostatic3DTestCase = TestCase<dim, T,
-                                          RunTimeParameters::MountainParameters,
-                                          IC_NonHydrostatic3D::Density<dim, T>,
-                                          IC_NonHydrostatic3D::Velocity<dim, T>,
-                                          IC_NonHydrostatic3D::Pressure<dim, T>>;
+using Mountain3DTestCase = TestCase<dim, T,
+                                    RunTimeParameters::MountainParameters,
+                                    IC_Mountain3D::Density<dim, T>,
+                                    IC_Mountain3D::Velocity<dim, T>,
+                                    IC_Mountain3D::Pressure<dim, T>>;

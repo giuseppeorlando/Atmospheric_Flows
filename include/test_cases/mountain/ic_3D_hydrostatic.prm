@@ -5,6 +5,7 @@ subsection Physical data
   set yc = 120000.0 # y-center of the mountain
   set ac = 10000.0  # semi-width of the mountain
 
+  set background = isothermal # Type of background state ('constant N' or 'isothermal')
   # The buoyancy frequency is not employed (isothermal atmosphere):
   # for T_bar = 250 K, N = g/sqrt(cp*T_bar) is approximately 0.0198
   set u_bar = 10.0     # Background horizontal velocity

@@ -1,7 +1,4 @@
 # Two-dimensional test case (vertical slice in the x-z plane):
-# set 'constexpr unsigned dim = 2' in main() of Atmospheric_Flow.cc and recompile.
-# Run from the root of the repository, e.g.
-#   mpirun -np <n> ./Atmospheric_Flow -p include/test_cases/IGW/parameter-file_IGW.prm
 
 subsection Test case
   # In this subsection we specify the test case
@@ -19,11 +16,11 @@ subsection Physical data
   set x_max = 6000000.0
   set z_max = 10000.0
 
-  set Mach   = 1
+  set Mach   = 1.0
   set Froude = 0.319275428407050
 
   set Rossby               = 9696.87
-  set rotation_formulation = R1
+  set rotation_formulation = R1 # none, R1, R2
 
   set L_ref   = 1.0 # Reference length to build non-dimensional domain
   set u_ref   = 1.0 # Reference velocity for non-dimensional variables

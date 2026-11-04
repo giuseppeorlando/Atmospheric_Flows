@@ -89,9 +89,10 @@ are read from the file indicated by `test_case_parameters`.
 
 | `test_case` | Description | Dimension | Implementation |
 |---|---|---|---|
-| `3D non-hydrostatic mountain` | Flow over a mountain with constant buoyancy frequency | 3 | `include/test_cases/mountain/ic_3D_nonhydrostatic.h` |
-| `3D hydrostatic mountain` | Flow over a mountain in an isothermal atmosphere | 3 | `include/test_cases/mountain/ic_3D_hydrostatic.h` |
-| `inertia-gravity waves` | Temperature perturbation in an isothermal atmosphere | 2 | `include/test_cases/IGW/ic_IGW.h` |
+| `3D mountain` | Flow over a mountain (background state with constant buoyancy frequency or isothermal) | 3 | `include/test_cases/mountain/ic_3D_mountain.h` |
+| `inertia-gravity waves` | Perturbation of the (potential) temperature (background state isothermal or with constant buoyancy frequency) | 2 | `include/test_cases/IGW/ic_IGW.h` |
+
+The hydrostatic background states shared by the test cases are implemented in `include/test_cases/background_state.h`.
 
 ---
 
@@ -108,8 +109,9 @@ mpirun -np 20 ./Atmospheric_Flow -p include/test_cases/mountain/parameter-file_3
 |---|---|---|
 | `include/test_cases/IGW/parameter-file_IGW.prm` | Inertia-gravity waves | 2 |
 | `include/test_cases/IGW/parameter-file_IGW_planetary_scale.prm` | Inertia-gravity waves at planetary scale | 2 |
-| `include/test_cases/mountain/parameter-file_3D_nonhydrostatic.prm` | Non-hydrostatic mountain (small domain) | 3 |
-| `include/test_cases/mountain/parameter-file_3D_hydrostatic.prm` | Hydrostatic mountain (larger domain) | 3 |
+| `include/test_cases/IGW/parameter-file_IGW_rotating.prm` | Inertia-gravity waves with rotation (constant buoyancy frequency) | 2 |
+| `include/test_cases/mountain/parameter-file_3D_nonhydrostatic.prm` | Mountain, non-hydrostatic regime (small domain, constant buoyancy frequency) | 3 |
+| `include/test_cases/mountain/parameter-file_3D_hydrostatic.prm` | Mountain, hydrostatic regime (larger domain, isothermal atmosphere) | 3 |
 
 All these examples are dimensional simulations, for which the tolerance of the linear solvers is absolute
 (see [Global parameters](#global-parameters)).
@@ -168,10 +170,14 @@ The global parameters (file passed with `-p`) include
   - Mountain center coordinates: `xc`, `yc`
   - Mountain semi-width: `ac`
 - Initial and background conditions:
-  - Buoyancy frequency: `N` (only for the non-hydrostatic mountain)
+  - Type of background state: `background` (`constant N` or `isothermal`)
+  - Buoyancy frequency: `N` (only for `constant N`, `N = 0` for a neutral atmosphere)
   - Background velocity: `u_bar`
   - Pressure at ground level (`z = 0`): `p_bar`
-  - Temperature at ground level (`z = 0`): `T_bar`
+  - Temperature (`isothermal`) or potential temperature at ground level (`constant N`): `T_bar`
+
+The hydrostatic or non-hydrostatic regime is determined by the semi-width of the mountain with respect to `u_bar/N`,
+rather than by the background state.
 - Rayleigh damping layers (subsection `Rayleigh damping data`), configured independently along each spatial direction:
   - Vertical damping: `z_start`, `lambda_z`
   - Horizontal damping (x-direction): `x_start_left`, `lambda_x_left`, `x_start_right`, `lambda_x_right`
@@ -179,14 +185,17 @@ The global parameters (file passed with `-p`) include
 
 ### Inertia-gravity waves test case
 
-- Perturbation of the temperature:
+- Perturbation of the temperature (`isothermal`) or of the potential temperature (`constant N`):
+  - Amplitude: `dT` (`dT = 0` for a background state at rest)
   - Vertical scale (typically the height of the domain): `H`
   - Center: `xc`
   - Semi-width: `ac`
-- Background state (isothermal atmosphere):
+- Background state:
+  - Type of background state: `background` (`isothermal` or `constant N`)
+  - Buoyancy frequency: `N` (only for `constant N`, `N = 0` for a neutral atmosphere)
   - Background velocity: `u_bar`
   - Pressure at ground level (`z = 0`): `p_bar`
-  - Temperature: `T_bar`
+  - Temperature (`isothermal`) or potential temperature at ground level (`constant N`): `T_bar`
 
 ---
 

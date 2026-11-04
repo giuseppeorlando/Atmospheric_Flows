@@ -16,8 +16,7 @@
 
 // Start by including the necessary header files
 //
-#include "mountain/ic_3D_nonhydrostatic.h"
-#include "mountain/ic_3D_hydrostatic.h"
+#include "mountain/ic_3D_mountain.h"
 #include "mountain/Rayleigh_damping.h"
 #include "IGW/ic_IGW.h"
 
@@ -35,11 +34,8 @@ std::unique_ptr<TestCaseBase<dim, T>>
 make_test_case(const std::string& tc_name,
                const std::string& tc_param_file,
                Args &&...args) {
-  if(tc_name == "3D non-hydrostatic mountain") {
-    return std::make_unique<NonHydrostatic3DTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
-  }
-  else if(tc_name == "3D hydrostatic mountain") {
-    return std::make_unique<Hydrostatic3DTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
+  if(tc_name == "3D mountain") {
+    return std::make_unique<Mountain3DTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
   }
   else if(tc_name == "inertia-gravity waves") {
     return std::make_unique<IGWTestCase<dim, T>>(tc_param_file, std::forward<Args>(args)...);
@@ -56,7 +52,7 @@ make_test_case(const std::string& tc_name,
  * without changing the solver-side interface.
  */
 void print_help_test_case(const std::string& tc_name) {
-  if(tc_name == "3D non-hydrostatic mountain" || tc_name == "3D hydrostatic mountain") {
+  if(tc_name == "3D mountain") {
     return print_help_tc<RunTimeParameters::MountainParameters>();
   }
   else if(tc_name == "inertia-gravity waves") {

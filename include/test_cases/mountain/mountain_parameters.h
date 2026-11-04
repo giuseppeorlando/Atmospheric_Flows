@@ -16,6 +16,8 @@
 
 #include <deal.II/base/parameter_handler.h>
 
+#include <string>
+
 // @sect{Run-time parameters}
 //
 // Since our method has several parameters that can be fine-tuned we put them
@@ -77,7 +79,8 @@ namespace RunTimeParameters {
     MountainData mountain_data; /*!< Mountain and Rayleigh damping parameters */
 
     // Other physical parameters
-    double N; /*!< Buoyancy frequency */
+    std::string background; /*!< Type of background state ('constant N' or 'isothermal') */
+    double N; /*!< Buoyancy frequency (only for 'constant N', N = 0 for a neutral atmosphere) */
 
     double u_bar;   /*!< Reference background velocity */
     double p_bar;   /*!< Reference background pressure */
@@ -108,10 +111,14 @@ namespace RunTimeParameters {
                         Patterns::Double(0.0),
                         "The semi-width of the mountain.");
 
+      prm.declare_entry("background",
+                        "constant N",
+                        Patterns::Selection("constant N|isothermal"),
+                        "The type of background state: 'constant N' (constant buoyancy frequency) or 'isothermal'.");
       prm.declare_entry("N",
                         "0.01",
                         Patterns::Double(0.0),
-                        "The buoyancy frequency.");
+                        "The buoyancy frequency (only for 'constant N', N = 0 for a neutral atmosphere).");
 
       prm.declare_entry("u_bar",
                         "1.0",
@@ -124,7 +131,7 @@ namespace RunTimeParameters {
       prm.declare_entry("T_bar",
                         "1.0",
                         Patterns::Double(0.0),
-                        "The background temperature (at z = 0).");
+                        "The background temperature ('isothermal') or the potential temperature at z = 0 ('constant N').");
       prm.declare_entry("rho_bar",
                         "1.0",
                         Patterns::Double(0.0),
@@ -190,7 +197,8 @@ namespace RunTimeParameters {
       mountain_data.yc = prm.get_double("yc");
       mountain_data.ac = prm.get_double("ac");
 
-      N = prm.get_double("N");
+      background = prm.get("background");
+      N          = prm.get_double("N");
 
       u_bar   = prm.get_double("u_bar");
       p_bar   = prm.get_double("p_bar");
