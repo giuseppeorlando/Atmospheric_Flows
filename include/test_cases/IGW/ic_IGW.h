@@ -32,12 +32,40 @@
 // @sect{Initial conditions}
 
 // In this namespace, we declare the initial conditions for the inertia-gravity waves
-// test case: a perturbation of the temperature superimposed to an isothermal atmosphere
-// at rest (or with a uniform horizontal background velocity). The last coordinate
+// test case: a perturbation superimposed to a background state at rest (or with a uniform
+// horizontal background velocity). Two background states are available:
+// - 'isothermal': isothermal atmosphere with a perturbation of the temperature;
+// - 'constant N': atmosphere with constant buoyancy frequency (neutral for N = 0) with a perturbation
+//   of the potential temperature.
+// For a zero amplitude of the perturbation, the background state at rest is obtained
+// (e.g. to test the preservation of hydrostatic equilibrium). The last coordinate
 // is the vertical one (see include/physics/vertical_slice.h)
 //
 namespace IC_IGW {
   using namespace dealii;
+
+  /**
+   * Exner pressure (normalized with its value at z = 0) of the background state with constant buoyancy frequency
+   * @param z height
+   * @param parameters parameters specific of the test case
+   * @return the Exner pressure
+   */
+  template<typename T>
+  T exner_constant_N(const T z, const RunTimeParameters::IGWParameters& parameters) {
+    const auto Gamma = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
+                       static_cast<T>(EquationData::Cp_Cv);
+    const auto Cp    = static_cast<T>(EquationData::R)/Gamma;
+    const auto g     = static_cast<T>(EquationData::g);
+
+    // Neutral atmosphere (limit for N -> 0)
+    if(parameters.N == 0.0) {
+      return static_cast<T>(1.0) - g/(Cp*parameters.T_bar)*z;
+    }
+
+    const auto N2 = parameters.N*parameters.N;
+
+    return static_cast<T>(1.0) - g*g/(N2*Cp*parameters.T_bar)*(static_cast<T>(1.0) - std::exp(-N2/g*z));
+  }
 
   /**
    * We declare now the class that describes the initial condition for the velocity.
@@ -152,6 +180,15 @@ namespace IC_IGW {
     (void)component;
     AssertIndexRange(component, 1);
 
+    // Background state with constant buoyancy frequency
+    if(parameters.background == "constant N") {
+      const auto Gamma = (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0))/
+                         static_cast<T>(EquationData::Cp_Cv);
+
+      return (parameters.p_bar/data.p_ref)*std::pow(exner_constant_N(p[dim - 1]*data.L_ref, parameters),
+                                                    static_cast<T>(1.0)/Gamma);
+    }
+
     // Inverse of the scale height of the isothermal atmosphere
     const auto delta = static_cast<T>(EquationData::g)/(static_cast<T>(EquationData::R)*parameters.T_bar);
 
@@ -202,18 +239,29 @@ namespace IC_IGW {
     (void)component;
     AssertIndexRange(component, 1);
 
+    const auto z = p[dim - 1]*data.L_ref;
+    const auto r = (p[0]*data.L_ref - parameters.xc)/parameters.ac;
+
+    // Background density (at z = 0)
+    const auto rho_bar = parameters.p_bar/(static_cast<T>(EquationData::R)*parameters.T_bar);
+
+    // Background state with constant buoyancy frequency and perturbation of the potential temperature
+    if(parameters.background == "constant N") {
+      const auto theta_bar   = parameters.T_bar*std::exp(parameters.N*parameters.N/static_cast<T>(EquationData::g)*z);
+      const auto theta_prime = parameters.dT*std::sin(numbers::PI*z/parameters.H)/(static_cast<T>(1.0) + r*r);
+
+      return (rho_bar/data.rho_ref)*
+             parameters.T_bar/(theta_bar + theta_prime)*std::pow(exner_constant_N(z, parameters), static_cast<T>(1.0)/
+                                                                 (static_cast<T>(EquationData::Cp_Cv) - static_cast<T>(1.0)));
+    }
+
     // Inverse of the scale height of the isothermal atmosphere
     const auto delta = static_cast<T>(EquationData::g)/(static_cast<T>(EquationData::R)*parameters.T_bar);
 
-    const auto z = p[dim - 1]*data.L_ref;
+    const auto rho_0 = rho_bar*std::exp(-delta*z);
 
-    // Background density
-    const auto rho_bar = parameters.p_bar/(static_cast<T>(EquationData::R)*parameters.T_bar);
-    const auto rho_0   = rho_bar*std::exp(-delta*z);
-
-    // Perturbation of the temperature (with amplitude 0.01 K) and corresponding perturbation of the density
-    const auto r       = (p[0]*data.L_ref - parameters.xc)/parameters.ac;
-    const auto T_prime = static_cast<T>(0.01)*std::exp(-r*r)*std::sin(numbers::PI*z/parameters.H);
+    // Perturbation of the temperature and corresponding perturbation of the density
+    const auto T_prime = parameters.dT*std::exp(-r*r)*std::sin(numbers::PI*z/parameters.H);
 
     const auto rho_prime = -std::exp(-static_cast<T>(0.5)*delta*z)*rho_bar*T_prime/parameters.T_bar;
 
