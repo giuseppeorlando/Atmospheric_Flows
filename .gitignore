@@ -17,6 +17,7 @@
 !include/*
 !examples/
 !examples/**
+!docs/*.md
 
 .DS_Store
 */.DS_Store
