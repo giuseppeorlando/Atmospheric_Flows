@@ -25,7 +25,7 @@ subsection Physical data
   set Mach   = 1.0
   set Froude = 0.319275428407050
 
-  set Rossby               = 10000.0
+  set Rossby = 10000.0
   set rotation_formulation = R1 # none, R1, R2
 
   set L_ref   = 1.0 # Reference length to build non-dimensional domain
