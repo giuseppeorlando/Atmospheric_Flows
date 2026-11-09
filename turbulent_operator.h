@@ -26,6 +26,7 @@
 // Include headers related to the problem of interest
 #include "include/io/runtime_parameters.h"
 #include "include/equation_data.h"
+#include "include/physics/vertical_slice.h"
 #include "include/time_integrator/runge_kutta.h"
 
 // This is the class that implements the discretization of the viscous operator
@@ -116,13 +117,13 @@ namespace Turbulent_Diffusivity {
 
   protected:
     // Define typedef for sake of readability and convenience
-    using FEEvaluation_u     = FEEvaluation<dim, fe_degree_u, n_q_points_1d, dim, Number>;
+    using FEEvaluation_u     = FEEvaluation<dim, fe_degree_u, n_q_points_1d, EquationData::n_comp_u, Number>;
     using FEEvaluation_theta = FEEvaluation<dim, fe_degree_T, n_q_points_1d, 1, Number>;
 
-    using FEFaceEvaluation_u     = FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d, dim, Number>;
+    using FEFaceEvaluation_u     = FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d, EquationData::n_comp_u, Number>;
     using FEFaceEvaluation_theta = FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d, 1, Number>;
 
-    using FEFaceEvaluation_u_boundary     = FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_boundary, dim, Number>;
+    using FEFaceEvaluation_u_boundary     = FEFaceEvaluation<dim, fe_degree_u, n_q_points_1d_boundary, EquationData::n_comp_u, Number>;
     using FEFaceEvaluation_theta_boundary = FEFaceEvaluation<dim, fe_degree_T, n_q_points_1d_boundary, 1, Number>;
 
     Number dt; /*!< Time step */
@@ -153,8 +154,8 @@ namespace Turbulent_Diffusivity {
     Number inv_Fr2;   /*!< Inverse of squared Froude number */
     Number l2_mixing; /*!< Square of mixing length */
 
-    Tensor<1, dim, VectorizedArray<Number>> tmp_diagonal_velocity; /*!< Auxiliary vector to compute the diagonal
-                                                                        of the velocity matrix */
+    Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> tmp_diagonal_velocity; /*!< Auxiliary vector to compute the diagonal
+                                                                                           of the velocity matrix */
 
     // Assembler functions for the rhs related to the velocity equation. Here, and also in the following,
     // we distinguish between the contribution for cells, faces and boundary
@@ -407,7 +408,7 @@ namespace Turbulent_Diffusivity {
     {
       // We create an auxiliary vector that will never change
       // independently on the stage, so we declare it once and for all
-      for(unsigned d = 0; d < dim; ++d) {
+      for(unsigned d = 0; d < EquationData::n_comp_u; ++d) {
         tmp_diagonal_velocity[d] = make_vectorized_array<Number>(1.0);
       }
     }
@@ -435,7 +436,7 @@ namespace Turbulent_Diffusivity {
 
       // We create an auxiliary vector that will never change
       // independently on the stage, so we declare it once and for all
-      for(unsigned d = 0; d < dim; ++d) {
+      for(unsigned d = 0; d < EquationData::n_comp_u; ++d) {
         tmp_diagonal_velocity[d] = make_vectorized_array<Number>(1.0);
       }
     }
@@ -570,8 +571,7 @@ namespace Turbulent_Diffusivity {
         const auto& u_curr = phi_u.front().get_value(q);
 
         // Compute contribution of the flux at each stage
-        Tensor<2, dim, VectorizedArray<Number>> diff_flux;
-        diff_flux = 0;
+        VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> diff_flux;
         for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
           const auto& grad_u_s     = phi_u[s - 1].get_gradient(q);
           const auto& grad_theta_s = phi_theta[s - 1].get_gradient(q);
@@ -594,8 +594,7 @@ namespace Turbulent_Diffusivity {
           const auto& kappa_s = l2_mixing*std::sqrt(mod_squared_grad_uz_s)*
                                 std::pow(static_cast<Number>(1.0) + b*std::abs(Ri_s), beta);
 
-          Tensor<2, dim, VectorizedArray<Number>> diff_flux_s;
-          diff_flux_s = 0;
+          VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> diff_flux_s;
           diff_flux_s[0][dim - 1] = kappa_s*grad_u_s[0][dim - 1];
 
           diff_flux += a_tilde[IMEX_stage - 1][s - 1]*dt*diff_flux_s;
@@ -651,7 +650,7 @@ namespace Turbulent_Diffusivity {
         const auto& n_minus = phi_m.get_normal_vector(q);
 
         // Compute the quantities at the previous stages
-        Tensor<1, dim, VectorizedArray<Number>> IP_flux_num;
+        Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>> IP_flux_num;
         for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
           // Retrieve the useful fields
           phi_u_m.gather_evaluate(src[2*(s-1)], EvaluationFlags::values | EvaluationFlags::gradients);
@@ -695,8 +694,7 @@ namespace Turbulent_Diffusivity {
           const auto& kappa_s_p = l2_mixing*std::sqrt(mod_squared_grad_uz_s_p)*
                                   std::pow(static_cast<Number>(1.0) + b_p*std::abs(Ri_s_p), beta_p);
 
-          Tensor<2, dim, VectorizedArray<Number>> avg_diff_flux_s;
-          avg_diff_flux_s = 0;
+          VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> avg_diff_flux_s;
           avg_diff_flux_s[0][dim - 1] = static_cast<Number>(0.5)*
                                         (kappa_s_m*grad_u_s_m[0][dim - 1] +
                                          kappa_s_p*grad_u_s_p[0][dim - 1]);
@@ -708,11 +706,11 @@ namespace Turbulent_Diffusivity {
                                     (static_cast<Number>(1.0)/kappa_s_m +
                                      static_cast<Number>(1.0)/kappa_s_p);
           auto jump_u_s           = u_s_m - u_s_p;
-          jump_u_s[dim - 1]       = make_vectorized_array<Number>(0.0);
+          jump_u_s[EquationData::n_comp_u - 1]       = make_vectorized_array<Number>(0.0);
 
           // Compute the numerical flux
           IP_flux_num += a_tilde[IMEX_stage - 1][s - 1]*dt*
-                         (avg_diff_flux_s*n_minus -
+                         (VerticalSlice::contract_mesh_index<dim>(avg_diff_flux_s, n_minus) -
                           coef_jump*avg_kappa_s*jump_u_s);
         }
 
@@ -802,8 +800,7 @@ namespace Turbulent_Diffusivity {
         const auto& kappa_curr = l2_mixing*std::sqrt(mod_squared_grad_uz_curr)*
                                  std::pow(static_cast<Number>(1.0) + b*std::abs(Ri_curr), beta);
 
-        Tensor<2, dim, VectorizedArray<Number>> diff_flux;
-        diff_flux = 0;
+        VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> diff_flux;
         const auto& grad_u    = phi.get_gradient(q);
         diff_flux[0][dim - 1] = kappa_curr*grad_u[0][dim - 1];
 
@@ -898,8 +895,7 @@ namespace Turbulent_Diffusivity {
         const auto& kappa_curr_p = l2_mixing*std::sqrt(mod_squared_grad_uz_curr_p)*
                                    std::pow(static_cast<Number>(1.0) + b_p*std::abs(Ri_curr_p), beta_p);
 
-        Tensor<2, dim, VectorizedArray<Number>> avg_diff_flux;
-        avg_diff_flux = 0;
+        VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> avg_diff_flux;
         const auto& grad_u_m      = phi_m.get_gradient(q);
         const auto& grad_u_p      = phi_p.get_gradient(q);
         avg_diff_flux[0][dim - 1] = static_cast<Number>(0.5)*
@@ -913,11 +909,11 @@ namespace Turbulent_Diffusivity {
                                      (static_cast<Number>(1.0)/kappa_curr_m +
                                       static_cast<Number>(1.0)/kappa_curr_p);
         auto jump_u                = u_m - u_p;
-        jump_u[dim - 1]            = make_vectorized_array<Number>(0.0);
+        jump_u[EquationData::n_comp_u - 1]            = make_vectorized_array<Number>(0.0);
 
         // Compute the numerical flux
         const auto& IP_flux_num = a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
-                                  (-avg_diff_flux*n_minus +
+                                  (-VerticalSlice::contract_mesh_index<dim>(avg_diff_flux, n_minus) +
                                     coef_jump*avg_kappa_curr*jump_u);
 
         phi_m.submit_value(IP_flux_num, q);
@@ -1393,7 +1389,7 @@ namespace Turbulent_Diffusivity {
 
     // We are in a matrix-free framework. Hence, in order to compute the diagonal, we need to test the operator against
     // a vector which is 1 for the node of interest and 0 elsewhere. This is what 'tmp_diagonal_velocity' does
-    AlignedVector<Tensor<1, dim, VectorizedArray<Number>>> diagonal(phi.dofs_per_component);
+    AlignedVector<Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>>> diagonal(phi.dofs_per_component);
 
     // Loop over all cells
     for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
@@ -1407,7 +1403,7 @@ namespace Turbulent_Diffusivity {
       // Loop over all dofs
       for(unsigned i = 0; i < phi.dofs_per_component; ++i) {
         for(unsigned j = 0; j < phi.dofs_per_component; ++j) {
-          phi.submit_dof_value(Tensor<1, dim, VectorizedArray<Number>>(), j);
+          phi.submit_dof_value(Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>>(), j);
         }
         phi.submit_dof_value(tmp_diagonal_velocity, i);
         phi.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
@@ -1434,8 +1430,7 @@ namespace Turbulent_Diffusivity {
           const auto& kappa_curr = l2_mixing*std::sqrt(mod_squared_grad_uz_curr)*
                                    std::pow(static_cast<Number>(1.0) + b*std::abs(Ri_curr), beta);
 
-          Tensor<2, dim, VectorizedArray<Number>> diff_flux;
-          diff_flux = 0;
+          VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> diff_flux;
           const auto& grad_u    = phi.get_gradient(q);
           diff_flux[0][dim - 1] = kappa_curr*grad_u[0][dim - 1];
 
@@ -1476,7 +1471,7 @@ namespace Turbulent_Diffusivity {
     FEFaceEvaluation_theta phi_theta_curr_m(data, true, EquationData::THETA_INDEX_DOF),
                            phi_theta_curr_p(data, false, EquationData::THETA_INDEX_DOF);
 
-    AlignedVector<Tensor<1, dim, VectorizedArray<Number>>> diagonal_m(phi_m.dofs_per_component),
+    AlignedVector<Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>>> diagonal_m(phi_m.dofs_per_component),
                                                            diagonal_p(phi_p.dofs_per_component);
 
     // Loop over all internal faces
@@ -1500,8 +1495,8 @@ namespace Turbulent_Diffusivity {
       // Loop over all dofs
       for(unsigned i = 0; i < phi_m.dofs_per_component; ++i) {
         for(unsigned j = 0; j < phi_m.dofs_per_component; ++j) {
-          phi_m.submit_dof_value(Tensor<1, dim, VectorizedArray<Number>>(), j);
-          phi_p.submit_dof_value(Tensor<1, dim, VectorizedArray<Number>>(), j);
+          phi_m.submit_dof_value(Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>>(), j);
+          phi_p.submit_dof_value(Tensor<1, EquationData::n_comp_u, VectorizedArray<Number>>(), j);
         }
         phi_m.submit_dof_value(tmp_diagonal_velocity, i);
         phi_m.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
@@ -1548,8 +1543,7 @@ namespace Turbulent_Diffusivity {
           const auto& kappa_curr_p = l2_mixing*std::sqrt(mod_squared_grad_uz_curr_p)*
                                      std::pow(static_cast<Number>(1.0) + b_p*std::abs(Ri_curr_p), beta_p);
 
-          Tensor<2, dim, VectorizedArray<Number>> avg_diff_flux;
-          avg_diff_flux = 0;
+          VerticalSlice::velocity_gradient_type<dim, VectorizedArray<Number>> avg_diff_flux;
           const auto& grad_u_m      = phi_m.get_gradient(q);
           const auto& grad_u_p      = phi_p.get_gradient(q);
           avg_diff_flux[0][dim - 1] = static_cast<Number>(0.5)*
@@ -1563,11 +1557,11 @@ namespace Turbulent_Diffusivity {
                                        (static_cast<Number>(1.0)/kappa_curr_m +
                                         static_cast<Number>(1.0)/kappa_curr_p);
           auto jump_u                = u_m - u_p;
-          jump_u[dim - 1]            = make_vectorized_array<Number>(0.0);
+          jump_u[EquationData::n_comp_u - 1]            = make_vectorized_array<Number>(0.0);
 
           // Compute the numerical flux
           const auto& IP_flux_num = a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
-                                    (-avg_diff_flux*n_minus +
+                                    (-VerticalSlice::contract_mesh_index<dim>(avg_diff_flux, n_minus) +
                                       coef_jump*avg_kappa_curr*jump_u);
 
           phi_m.submit_value(IP_flux_num, q);

@@ -123,4 +123,28 @@ namespace VerticalSlice {
       return res;
     }
   }
+
+  /**
+   * Contract the second index of a tensor with one entry per velocity component and one per direction of the mesh
+   * (e.g. a diffusive flux of the velocity) with a vector along the directions of the mesh (e.g. the unit normal vector)
+   * @param t tensor with one entry per velocity component and one per direction of the mesh
+   * @param n vector along the directions of the mesh
+   * @return the resulting vector in the space of velocity components
+   */
+  template<unsigned dim, typename Number>
+  inline DEAL_II_ALWAYS_INLINE
+  Tensor<1, EquationData::n_comp_u, Number> contract_mesh_index(const velocity_gradient_type<dim, Number>& t,
+                                                                const Tensor<1, dim, Number>& n) {
+    if constexpr(dim == EquationData::n_comp_u) {
+      return t*n;
+    }
+    else {
+      Tensor<1, EquationData::n_comp_u, Number> res;
+      for(unsigned i = 0; i < EquationData::n_comp_u; ++i) {
+        res[i] = t[i]*n;
+      }
+
+      return res;
+    }
+  }
 } // namespace VerticalSlice
