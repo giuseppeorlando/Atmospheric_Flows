@@ -36,7 +36,7 @@ subsection Numerical data
 
   # Fixed point tolerances
   set atol_fixed_point = 0.0
-  set rtol_fixed_point = 1e-14
+  set rtol_fixed_point = 1e-10
 end
 
 subsection Mesh parameters
@@ -50,10 +50,10 @@ subsection Data linear solvers
   # In this section we declare the parameters that are going to control the solution process.
   set max_iterations = 30000 # maximum number of iterations
   # The stopping criterion is atol_iterative + rtol_iterative*||rhs||. For a dimensional simulation,
-  # ||rhs|| is dominated by the hydrostatic background state (here of the order of 6e14), so that
+  # ||rhs|| is dominated by the hydrostatic background state, so that
   # rtol_iterative has to be very small and the absolute tolerance determines the accuracy
-  set atol_iterative = 1e-9 # absolute tolerance linear solvers
-  set rtol_iterative = 1e-24 # relative tolerance linear solvers
+  set atol_iterative = 1e-10 # absolute tolerance linear solvers
+  set rtol_iterative = 1e-25 # relative tolerance linear solvers
 end
 
 subsection Restart data

@@ -1,10 +1,10 @@
 subsection Physical data
   # In this subsection we declare the physical data for the specific configuration
-  # (inertia-gravity waves with rotation in an atmosphere with constant buoyancy frequency)
+  # (perturbation of the potential temperature in an atmosphere with constant buoyancy frequency)
   set dT = 0.01      # Amplitude of the perturbation of the potential temperature
   set H  = 10000.0   # Vertical scale of the perturbation (height of the domain)
-  set xc = 2000000.0 # x-center of the perturbation
-  set ac = 100000.0  # Semi-width of the perturbation
+  set xc = 100000.0  # x-center of the perturbation
+  set ac = 5000.0    # Semi-width of the perturbation
 
   set background = constant N # Type of background state ('isothermal' or 'constant N')
   set N          = 0.01       # Buoyancy frequency

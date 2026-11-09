@@ -3,24 +3,24 @@
 subsection Test case
   # In this subsection we specify the test case
   set test_case = inertia-gravity waves
-  set test_case_parameters = include/test_cases/IGW/ic_IGW.prm
+  set test_case_parameters = include/test_cases/IGW/ic_IGW_theta.prm
 end
 
 subsection Physical data
   # In this subsection we declare the physical data
   set initial_time = 0.0
-  set final_time   = 28800.0
+  set final_time   = 3000.0
 
   set x_min = 0.0
   set z_min = 0.0
-  set x_max = 6000000.0
+  set x_max = 300000.0
   set z_max = 10000.0
 
   set Mach   = 1.0
   set Froude = 0.319275428407050
 
-  set Rossby = 9696.87
-  set rotation_formulation = R1 # none, R1, R2
+  set Rossby = 1e4
+  set rotation_formulation = none # none, R1 or R2
 
   set L_ref   = 1.0 # Reference length to build non-dimensional domain
   set u_ref   = 1.0 # Reference velocity for non-dimensional variables
@@ -32,28 +32,28 @@ end
 subsection Numerical data
   # In this subsection we declare some numerical data
   # (time step and fixed point iteration tolerance)
-  set dt = 0.5
+  set dt = 6.0
 
   # Fixed point tolerances
   set atol_fixed_point = 0.0
-  set rtol_fixed_point = 1e-6
+  set rtol_fixed_point = 1e-10
 end
 
 subsection Mesh parameters
   # In this subsection we declare the data that is relevant to the domain discretization
   set n_elements_x = 150 # number of (initial) elements along x direction
-  set n_elements_z = 10  # number of (initial) elements along z direction
-  set n_of_refines = 1   # number of global refines of the initial triangulation
+  set n_elements_z = 5   # number of (initial) elements along z direction
+  set n_of_refines = 0   # number of global refines of the initial triangulation
 end
 
 subsection Data linear solvers
   # In this section we declare the parameters that are going to control the solution process.
   set max_iterations = 30000 # maximum number of iterations
   # The stopping criterion is atol_iterative + rtol_iterative*||rhs||. For a dimensional simulation,
-  # ||rhs|| is dominated by the hydrostatic background state (here of the order of 6e13), so that
+  # ||rhs|| is dominated by the hydrostatic background state, so that
   # rtol_iterative has to be very small and the absolute tolerance determines the accuracy
   set atol_iterative = 1e-10 # absolute tolerance linear solvers
-  set rtol_iterative = 1e-24 # relative tolerance linear solvers
+  set rtol_iterative = 1e-25 # relative tolerance linear solvers
 end
 
 subsection Restart data
@@ -69,10 +69,10 @@ end
 
 subsection Output data
   # The directory where results are saved
-  set saving directory = INERTIA_GRAVITY_WAVES_INVERSE_MASS_MATRIX
+  set saving directory = IGW_THETA
 
   # The output frequency
-  set output_interval = 100
+  set output_interval = 500
 
   # Finally we set the verbosity level
   set verbose = true

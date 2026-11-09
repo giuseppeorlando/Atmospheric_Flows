@@ -107,9 +107,9 @@ mpirun -np 20 ./Atmospheric_Flow -p include/test_cases/mountain/parameter-file_3
 
 | Global parameter file | Test case | Dimension |
 |---|---|---|
-| `include/test_cases/IGW/parameter-file_IGW.prm` | Inertia-gravity waves | 2 |
-| `include/test_cases/IGW/parameter-file_IGW_planetary_scale.prm` | Inertia-gravity waves at planetary scale | 2 |
-| `include/test_cases/IGW/parameter-file_IGW_rotating.prm` | Inertia-gravity waves with rotation (constant buoyancy frequency) | 2 |
+| `include/test_cases/IGW/parameter-file_IGW_theta.prm` | Inertia-gravity waves, perturbation of the potential temperature (constant buoyancy frequency) | 2 |
+| `include/test_cases/IGW/parameter-file_IGW_isothermal.prm` | Inertia-gravity waves, perturbation of the temperature (isothermal background state) | 2 |
+| `include/test_cases/IGW/parameter-file_IGW_planetary_scale.prm` | Inertia-gravity waves at planetary scale (isothermal background state) | 2 |
 | `include/test_cases/mountain/parameter-file_3D_nonhydrostatic.prm` | Mountain, non-hydrostatic regime (small domain, constant buoyancy frequency) | 3 |
 | `include/test_cases/mountain/parameter-file_3D_hydrostatic.prm` | Mountain, hydrostatic regime (larger domain, isothermal atmosphere) | 3 |
 
