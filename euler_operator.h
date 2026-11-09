@@ -1766,6 +1766,7 @@ namespace Atmospheric_Flow {
       std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
       std::vector<FEEvaluation_u>    phi_u(IMEX_stage, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
       std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+      FEEvaluation_u                 phi_u_bar(data, EquationData::U_INDEX_DOF);
 
       /*--- Loop over all cells ---*/
       for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
@@ -1782,6 +1783,12 @@ namespace Atmospheric_Flow {
         phi_u.back().reinit(cell);
         phi_u.back().gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
 
+        // Read the background velocity (only in presence of rotation)
+        if(rotation != Rotation::Formulation::none) {
+          phi_u_bar.reinit(cell);
+          phi_u_bar.gather_evaluate(u_bar, EvaluationFlags::values);
+        }
+
         phi.reinit(cell);
 
         // Loop over all quadrature points
@@ -1796,7 +1803,8 @@ namespace Atmospheric_Flow {
 
           // Compute the quantities at the previous stages
           Tensor<1, dim, VectorizedArray<Number>> flux;
-          VectorizedArray<Number> gravity_term = make_vectorized_array<Number>(0.0);
+          VectorizedArray<Number> gravity_term  = make_vectorized_array<Number>(0.0);
+          VectorizedArray<Number> rotation_term = make_vectorized_array<Number>(0.0);
           for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
             const auto& rho_s  = phi_rho[s - 1].get_value(q);
             const auto& u_s    = phi_u[s - 1].get_value(q);
@@ -1811,6 +1819,11 @@ namespace Atmospheric_Flow {
 
             gravity_term += a_tilde[IMEX_stage - 1][s - 1]*dt*
                             (Ma2_ov_Fr2*rho_s*u_s[EquationData::n_comp_u - 1]);
+
+            if(rotation != Rotation::Formulation::none) {
+              rotation_term += a_tilde[IMEX_stage - 1][s - 1]*dt*
+                               (Ma2*scalar_product(u_s, Rotation::coriolis_term(rho_s, u_s - phi_u_bar.get_value(q), inv_Ro)));
+            }
           }
 
           // We assign to the rhs the contribution due to kinetic energy in the fixed point loop.
@@ -1823,9 +1836,17 @@ namespace Atmospheric_Flow {
                             (Ma2_ov_Fr2*rho_for_fixed_s*u_fixed_s[EquationData::n_comp_u - 1]);
           }
 
+          // Add last contribution of the work of the Coriolis force, with the current velocity
+          // taken from the fixed point loop (for both formulations of the rotation term)
+          if(rotation != Rotation::Formulation::none) {
+            rotation_term += a_tilde[IMEX_stage - 1][IMEX_stage - 1]*dt*
+                             (Ma2*scalar_product(u_fixed_s,
+                                                 Rotation::coriolis_term(rho_for_fixed_s, u_fixed_s - phi_u_bar.get_value(q), inv_Ro)));
+          }
+
           phi.submit_value(rhoE_old -
                            rho_for_fixed_s*(static_cast<Number>(0.5)*Ma2*scalar_product(u_fixed_s, u_fixed_s)) -
-                           gravity_term, q);
+                           gravity_term - rotation_term, q);
           phi.submit_gradient(flux, q);
         }
 
@@ -1838,6 +1859,7 @@ namespace Atmospheric_Flow {
       std::vector<FEEvaluation_pres> phi_pres(IMEX_stage - 1, FEEvaluation_pres(data, EquationData::P_INDEX_DOF));
       std::vector<FEEvaluation_u>    phi_u(IMEX_stage, FEEvaluation_u(data, EquationData::U_INDEX_DOF));
       std::vector<FEEvaluation_rho>  phi_rho(IMEX_stage, FEEvaluation_rho(data, EquationData::RHO_INDEX_DOF));
+      FEEvaluation_u                 phi_u_bar(data, EquationData::U_INDEX_DOF);
 
       // Loop over all cells
       for(unsigned cell = cell_range.first; cell < cell_range.second; ++cell) {
@@ -1854,6 +1876,12 @@ namespace Atmospheric_Flow {
         phi_u.back().reinit(cell);
         phi_u.back().gather_evaluate(src[3*(IMEX_stage - 1) + 1], EvaluationFlags::values);
 
+        // Read the background velocity (only in presence of rotation)
+        if(rotation != Rotation::Formulation::none) {
+          phi_u_bar.reinit(cell);
+          phi_u_bar.gather_evaluate(u_bar, EvaluationFlags::values);
+        }
+
         phi.reinit(cell);
 
         // Loop over all quadrature points
@@ -1868,7 +1896,8 @@ namespace Atmospheric_Flow {
 
           // Compute the quantities at the previous stages
           Tensor<1, dim, VectorizedArray<Number>> flux;
-          VectorizedArray<Number> gravity_term = make_vectorized_array<Number>(0.0);
+          VectorizedArray<Number> gravity_term  = make_vectorized_array<Number>(0.0);
+          VectorizedArray<Number> rotation_term = make_vectorized_array<Number>(0.0);
           for(unsigned s = 1; s <= IMEX_stage - 1; ++s) {
             const auto& rho_s  = phi_rho[s - 1].get_value(q);
             const auto& u_s    = phi_u[s - 1].get_value(q);
@@ -1883,6 +1912,11 @@ namespace Atmospheric_Flow {
 
             gravity_term += b_tilde[s - 1]*dt*
                             (Ma2_ov_Fr2*rho_s*u_s[EquationData::n_comp_u - 1]);
+
+            if(rotation != Rotation::Formulation::none) {
+              rotation_term += b_tilde[s - 1]*dt*
+                               (Ma2*scalar_product(u_s, Rotation::coriolis_term(rho_s, u_s - phi_u_bar.get_value(q), inv_Ro)));
+            }
           }
 
           // We assign to the rhs the contribution due to the (already updated) kinetic energy
@@ -1891,7 +1925,7 @@ namespace Atmospheric_Flow {
 
           phi.submit_value(rhoE_old -
                            rho_curr*(static_cast<Number>(0.5)*Ma2*scalar_product(u_curr, u_curr)) -
-                           gravity_term, q);
+                           gravity_term - rotation_term, q);
           phi.submit_gradient(flux, q);
         }
 

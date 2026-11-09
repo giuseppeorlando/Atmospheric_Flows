@@ -75,9 +75,9 @@ namespace Rotation {
   /**
    * Coriolis force (non-dimensional) on an f-plane, i.e. (1/Ro)*rho*(k x u_rel), with k the unit vector
    * along the vertical direction. The Coriolis force acts on the velocity relative to the background velocity.
-   * WARNING: for a non-zero background velocity u_bar, the Coriolis force performs the work
-   * -(1/Ro)*rho*u.(k x u_bar), which is not taken into account in the energy equation (it corresponds to the work
-   * of the pressure gradient balancing the Coriolis force acting on the background velocity, which is not represented)
+   * For a non-zero background velocity u_bar, the Coriolis force performs the work (1/Ro)*rho*u.(k x u_bar),
+   * which is included in the energy equation (it corresponds to the work of the pressure gradient balancing
+   * the Coriolis force acting on the background velocity, which is not represented)
    * @param rho density
    * @param u_rel velocity relative to the background velocity
    * @param inv_Ro inverse of the Rossby number

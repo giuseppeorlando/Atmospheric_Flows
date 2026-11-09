@@ -135,7 +135,7 @@ At convergence of the fixed point loop, R1 and R2 solve the same discrete system
 The two formulations are discussed in https://arxiv.org/abs/2605.29598.
 
 > **Note:** for a non-zero background velocity, the work of the Coriolis force acting on the velocity relative
-> to the background velocity is not included in the energy equation (see `include/physics/rotation.h`).
+> to the background velocity is included in the energy equation (see `include/physics/rotation.h`).
 
 ---
 
