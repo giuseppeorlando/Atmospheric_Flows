@@ -1693,6 +1693,11 @@ void print_help(const char* program_name, const unsigned dim) {
 
 int main(int argc, char *argv[]) {
   try {
+    // Initialize MPI before reading the command line, so that the messages are printed only by the root process
+    Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, -1);
+
+    const auto& curr_rank = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
+
     // Dimension of the problem (fixed at compile time). Two-dimensional configurations
     // are interpreted as vertical slices in the x-z plane (see include/physics/vertical_slice.h)
     constexpr unsigned dim = 3;
@@ -1704,13 +1709,17 @@ int main(int argc, char *argv[]) {
       std::string arg = argv[i];
 
       if(arg == "-h" || arg == "--help") {
-        print_help(argv[0], dim);
-        data.print_parameters();
+        if(curr_rank == 0) {
+          print_help(argv[0], dim);
+          data.print_parameters();
+        }
         return 0;
       }
       else if(arg == "-p" || arg == "--param") {
         if(i + 1 >= argc) {
-          std::cerr << "Error: missing argument after " << arg << "\n";
+          if(curr_rank == 0) {
+            std::cerr << "Error: missing argument after " << arg << "\n";
+          }
           return 1;
         }
         parameter_file = argv[++i];
@@ -1719,8 +1728,10 @@ int main(int argc, char *argv[]) {
         continue;
       }
       else {
-        std::cerr << "Unknown option: " << arg << "\n";
-        print_help(argv[0], dim);
+        if(curr_rank == 0) {
+          std::cerr << "Unknown option: " << arg << "\n";
+          print_help(argv[0], dim);
+        }
         return 1;
       }
     }
@@ -1731,16 +1742,15 @@ int main(int argc, char *argv[]) {
       std::string arg = argv[i];
 
       if(arg == "--help_test_case") {
-        std::cout << "Test case: " << data.tc_name << std::endl;
-        print_help_test_case(data.tc_name);
+        if(curr_rank == 0) {
+          std::cout << "Test case: " << data.tc_name << std::endl;
+          print_help_test_case(data.tc_name);
+        }
         return 0;
       }
     }
 
     // Initialize console and output
-    Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, -1);
-
-    const auto& curr_rank = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
     deallog.depth_console(data.verbose && curr_rank == 0 ? 2 : 0);
 
     // Initilize Butcher tableaux. The declaration of the coefficients (hard-coded for the moment)
