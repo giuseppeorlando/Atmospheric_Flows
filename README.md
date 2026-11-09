@@ -231,7 +231,9 @@ saved separately as `u`, `v` (out-of-plane), and `w`.
 - `Atmospheric_Flow_turbulent.cc` and `turbulent_operator.h`: solver including turbulent vertical diffusion.
 - `LAMINAR_INVERSE_MASS_MATRICES`, `LAMINAR_ITERATIVE_SOLVERS`: alternative implementations of the laminar solver.
 - `LAMINAR_INVERSE_MASS_MATRICES_PERTURBATION`: alternative solver implementation based on a perturbation formulation
-  (as described, e.g., in https://www.sciencedirect.com/science/article/abs/pii/S002199911730030X).
+  (as described, e.g., in https://www.sciencedirect.com/science/article/abs/pii/S002199911730030X)
+  with respect to the hydrostatic background state of the test case. As for the main solver, the dimension
+  is fixed at compile time and two-dimensional configurations are vertical slices.
 - `TURBULENT_INVERSE_MASS_MATRICES`, `TURBULENT_ITERATIVE_SOLVERS`: alternative implementations of the turbulent solver.
 
 These modules do not include the rotation term.
