@@ -47,6 +47,32 @@ struct TestCaseBase {
 
   InitialCondition<dim, T> ic; /*!< Auxiliary structure for concrete intial condition functions */
 
+  /*!< Background (hydrostatic) state, e.g. for a formulation in terms of perturbations.
+       A test case can provide only some of the fields: for the missing ones,
+       the corresponding initial condition is the background state (see the getters below) */
+  InitialCondition<dim, T> background;
+
+  /**
+   * Background density (the initial density if not provided by the test case)
+   */
+  const dealii::Function<dim, T>& background_density() const {
+    return background.density ? *background.density : *ic.density;
+  }
+
+  /**
+   * Background velocity (the initial velocity if not provided by the test case)
+   */
+  const dealii::Function<dim, T>& background_velocity() const {
+    return background.velocity ? *background.velocity : *ic.velocity;
+  }
+
+  /**
+   * Background pressure (the initial pressure if not provided by the test case)
+   */
+  const dealii::Function<dim, T>& background_pressure() const {
+    return background.pressure ? *background.pressure : *ic.pressure;
+  }
+
   /*!< Data for the (terrain-following) mesh mapping and the
        Rayleigh damping profiles. Defaults to "flat, undamped": a test
        case whose Parameters class does not opt in (see

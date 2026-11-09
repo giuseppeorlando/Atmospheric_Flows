@@ -38,6 +38,8 @@
 // - 'isothermal': isothermal atmosphere.
 // Notice that the hydrostatic or non-hydrostatic regime is determined by the semi-width
 // of the mountain with respect to u_bar/N, rather than by the background state.
+// Since the initial conditions coincide with the background state, the test case does not provide
+// the background state separately (see TestCaseBase in include/test_cases/test_case.h).
 // The last coordinate is the vertical one
 //
 namespace IC_Mountain3D {

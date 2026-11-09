@@ -808,9 +808,9 @@ void EulerSolver<dim>::setup_dofs() {
   matrix_free_storage->initialize_dof_vector(u_bar, EquationData::U_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(pres_bar, EquationData::P_INDEX_DOF);
   matrix_free_storage->initialize_dof_vector(rho_bar, EquationData::RHO_INDEX_DOF);
-  VectorTools::interpolate(mapping, dof_handler_velocity, *(tc->ic.velocity), u_bar);
-  VectorTools::interpolate(mapping, dof_handler_pressure, *(tc->ic.pressure), pres_bar);
-  VectorTools::interpolate(mapping, dof_handler_density, *(tc->ic.density), rho_bar);
+  VectorTools::interpolate(mapping, dof_handler_velocity, tc->background_velocity(), u_bar);
+  VectorTools::interpolate(mapping, dof_handler_pressure, tc->background_pressure(), pres_bar);
+  VectorTools::interpolate(mapping, dof_handler_density, tc->background_density(), rho_bar);
 
   // Compute damping layer vectors (if meaningful)
   if(tc->has_mountain_data) {

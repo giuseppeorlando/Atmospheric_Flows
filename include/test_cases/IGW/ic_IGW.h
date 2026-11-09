@@ -185,9 +185,11 @@ namespace IC_IGW {
      * Class constructor
      * @param parameters_ auxiliary structure with parameters specific of the test case
      * @param data_ auxiliary structure with 'generic' parameters
+     * @param background_ flag to evaluate the background state (i.e. without perturbation)
      */
     Density(RunTimeParameters::IGWParameters& parameters_,
-            RunTimeParameters::Data_Storage& data_);
+            RunTimeParameters::Data_Storage& data_,
+            const bool background_ = false);
 
     /**
      * Evaluation of the density
@@ -200,14 +202,16 @@ namespace IC_IGW {
   private:
     RunTimeParameters::IGWParameters& parameters; /*!< Parameters specific of the test case */
     RunTimeParameters::Data_Storage& data;        /*!< 'Global' parameters */
+    const bool background;                        /*!< Flag to evaluate the background state */
   };
 
   // Constructor which again relies on the 'Function' constructor.
   //
   template<unsigned dim, typename T>
   Density<dim, T>::Density(RunTimeParameters::IGWParameters& parameters_,
-                           RunTimeParameters::Data_Storage& data_):
-    Function<dim, T>(1, data_.initial_time), parameters(parameters_), data(data_) {}
+                           RunTimeParameters::Data_Storage& data_,
+                           const bool background_):
+    Function<dim, T>(1, data_.initial_time), parameters(parameters_), data(data_), background(background_) {}
 
   // Evaluation depending on the spatial coordinates. The input argument 'component'
   // will be unused but it has to be kept to override
@@ -221,6 +225,9 @@ namespace IC_IGW {
     const auto z = p[dim - 1]*data.L_ref;
     const auto r = (p[0]*data.L_ref - parameters.xc)/parameters.ac;
 
+    // Amplitude of the perturbation (zero for the background state)
+    const auto dT = background ? static_cast<T>(0.0) : parameters.dT;
+
     // Background density (at z = 0)
     const auto rho_bar = parameters.p_bar/(static_cast<T>(EquationData::R)*parameters.T_bar);
 
@@ -229,7 +236,7 @@ namespace IC_IGW {
       const auto pi_bar      = BackgroundState::exner_constant_N<T>(p[dim - 1], data.L_ref, parameters.N, parameters.T_bar);
       const auto theta_bar   = BackgroundState::potential_temperature_constant_N<T>(p[dim - 1], data.L_ref,
                                                                                     parameters.N, parameters.T_bar);
-      const auto theta_prime = parameters.dT*std::sin(numbers::PI*z/parameters.H)/(static_cast<T>(1.0) + r*r);
+      const auto theta_prime = dT*std::sin(numbers::PI*z/parameters.H)/(static_cast<T>(1.0) + r*r);
 
       return (rho_bar/data.rho_ref)*
              parameters.T_bar/(theta_bar + theta_prime)*std::pow(pi_bar, static_cast<T>(1.0)/
@@ -242,7 +249,7 @@ namespace IC_IGW {
     const auto rho_0 = rho_bar*std::exp(-delta*z);
 
     // Perturbation of the temperature and corresponding perturbation of the density
-    const auto T_prime = parameters.dT*std::exp(-r*r)*std::sin(numbers::PI*z/parameters.H);
+    const auto T_prime = dT*std::exp(-r*r)*std::sin(numbers::PI*z/parameters.H);
 
     const auto rho_prime = -std::exp(-static_cast<T>(0.5)*delta*z)*rho_bar*T_prime/parameters.T_bar;
 
@@ -255,11 +262,25 @@ namespace IC_IGW {
  * @brief Inertia-gravity waves test case
  *
  * This type owns all inertia-gravity waves-specific configuration and hides the concrete
- * implementations from the solver.
+ * implementations from the solver. Since the initial condition contains the perturbation,
+ * the test case provides also the background (hydrostatic) density, i.e. the same density
+ * without perturbation (the velocity and the pressure are not perturbed).
  */
 template<unsigned dim, typename T = double>
-using IGWTestCase = TestCase<dim, T,
-                             RunTimeParameters::IGWParameters,
-                             IC_IGW::Density<dim, T>,
-                             IC_IGW::Velocity<dim, T>,
-                             IC_IGW::Pressure<dim, T>>;
+class IGWTestCase: public TestCase<dim, T,
+                                   RunTimeParameters::IGWParameters,
+                                   IC_IGW::Density<dim, T>,
+                                   IC_IGW::Velocity<dim, T>,
+                                   IC_IGW::Pressure<dim, T>> {
+public:
+  /**
+   * Class constructor
+   * @param tc_param_file name of the parameter file
+   * @param data 'global' parameters
+   */
+  IGWTestCase(const std::string& tc_param_file,
+              RunTimeParameters::Data_Storage& data):
+    IGWTestCase::TestCase(tc_param_file, data) {
+    this->background.density = std::make_unique<IC_IGW::Density<dim, T>>(this->parameters, data, true);
+  }
+};
