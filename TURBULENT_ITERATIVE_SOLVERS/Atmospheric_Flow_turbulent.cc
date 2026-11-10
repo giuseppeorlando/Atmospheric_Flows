@@ -1326,6 +1326,23 @@ void EulerSolver<dim>::output_results(const unsigned step) {
   theta_s.front().update_ghost_values();
   data_out.add_data_vector(dof_handler_pressure, theta_s.front(), "theta", {DataComponentInterpretation::component_is_scalar});
 
+  // Perturbation of the potential temperature with respect to the background state
+  // (the potential temperature is computed with the same formula employed in the solver)
+  Vec theta_prime(theta_s.front());
+  for(const auto& cell: dof_handler_pressure.active_cell_iterators()) {
+    if(cell->is_locally_owned()) {
+      std::vector<types::global_dof_index> dof_indices(fe_pressure.dofs_per_cell);
+      cell->get_dof_indices(dof_indices);
+      for(unsigned idx = 0; idx < dof_indices.size(); ++idx) {
+        const auto pres_b = pres_bar(dof_indices[idx]);
+        theta_prime(dof_indices[idx]) = theta_s.front()(dof_indices[idx]) -
+                                        pres_b/rho_bar(dof_indices[idx])/std::pow(pres_b, Gamma);
+      }
+    }
+  }
+  theta_prime.update_ghost_values();
+  data_out.add_data_vector(dof_handler_pressure, theta_prime, "theta_prime", {DataComponentInterpretation::component_is_scalar});
+
   // Save background state
   rho_bar.update_ghost_values();
   data_out.add_data_vector(dof_handler_density, rho_bar, "rho_bar", {DataComponentInterpretation::component_is_scalar});

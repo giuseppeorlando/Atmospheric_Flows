@@ -1103,7 +1103,9 @@ void EulerSolver<dim>::output_results(const unsigned step) {
   data_out.add_data_vector(dof_handler_pressure, pres_s.front(), "p", {DataComponentInterpretation::component_is_scalar});
 
   // Compute the potential temperature (in Kelvin). Pressure and density are first expressed in physical units
-  // through the reference quantities, so that the formula is valid both for dimensional and non-dimensional simulations
+  // through the reference quantities, so that the formula is valid both for dimensional and non-dimensional simulations.
+  // Compute also the perturbation of the potential temperature with respect to the background state
+  Vec theta_prime(theta_old);
   for(const auto& cell: dof_handler_pressure.active_cell_iterators()) {
     if(cell->is_locally_owned()) {
       std::vector<types::global_dof_index> dof_indices(fe_pressure.dofs_per_cell);
@@ -1114,11 +1116,17 @@ void EulerSolver<dim>::output_results(const unsigned step) {
         const auto T    = pres/(static_cast<Number>(EquationData::R)*rho);
         const auto Pi   = std::pow(pres/static_cast<Number>(EquationData::p0), Gamma);
         theta_old(dof_indices[idx]) = T/Pi;
+
+        const auto pres_b = p_ref*pres_bar(dof_indices[idx]);
+        theta_prime(dof_indices[idx]) = T/Pi - pres_b/(static_cast<Number>(EquationData::R)*rho_ref*rho_bar(dof_indices[idx]))/
+                                               std::pow(pres_b/static_cast<Number>(EquationData::p0), Gamma);
       }
     }
   }
   theta_old.update_ghost_values();
   data_out.add_data_vector(dof_handler_pressure, theta_old, "theta", {DataComponentInterpretation::component_is_scalar});
+  theta_prime.update_ghost_values();
+  data_out.add_data_vector(dof_handler_pressure, theta_prime, "theta_prime", {DataComponentInterpretation::component_is_scalar});
 
   // Save background state
   rho_bar.update_ghost_values();
