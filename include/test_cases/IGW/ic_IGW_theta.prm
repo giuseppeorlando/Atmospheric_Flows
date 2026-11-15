@@ -8,7 +8,7 @@ subsection Physical data
 
   set background = constant N # Type of background state ('isothermal' or 'constant N')
   set N          = 0.01       # Buoyancy frequency
-  set u_bar      = 20.0       # Background horizontal velocity (0 for the translated configuration)
+  set u_bar      = 20.0       # Background horizontal velocity
   set p_bar      = 100000.0   # Background pressure (z = 0)
   set T_bar      = 300.0      # Background potential temperature (z = 0)
 end
